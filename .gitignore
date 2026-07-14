@@ -1,0 +1,55 @@
+# ==========================
+# Dependencies
+# ==========================
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# ==========================
+# Environment variables
+# ==========================
+.env
+.env.*
+!.env.example
+*.env.docker
+
+# ==========================
+# Build outputs
+# ==========================
+dist/
+build/
+client/dist/
+backend/dist/
+
+# ==========================
+# Logs
+# ==========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================
+# Claude / Claude Code
+# ==========================
+.claude/
+**/.claude/
+CLAUDE.md
+claude*
+settings.local.json
+
+# ==========================
+# Operating System
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# IDE
+# ==========================
+.vscode/
+.idea/
+# Documentación interna
+CHECKLIST_VALIDACIONES.md
