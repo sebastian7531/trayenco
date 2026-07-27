@@ -1,8 +1,7 @@
 import { io } from 'socket.io-client'
 
-const SOCKET_URL = `http://${window.location.hostname}:3001`
-
-const socket = io(SOCKET_URL, {
+const socket = io({
+  path: '/socket.io',
   autoConnect: false,
 })
 

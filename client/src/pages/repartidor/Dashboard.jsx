@@ -8,6 +8,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import api from '../../services/api'
 import socket, { conectarSocket, desconectarSocket } from '../../services/socket'
 import { useAuth } from '../../context/AuthContext'
+import { usePWAStatus } from '../../context/PWAStatusContext'
 import { formatearHoras } from '../../utils/asistencia'
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -80,9 +81,11 @@ const agruparPedidos = (filas) => {
 
 const Dashboard = () => {
   const { user, logout } = useAuth()
+  const { isOnline } = usePWAStatus()
   const navigate = useNavigate()
   const [ruta, setRuta]         = useState(null)
   const [pedidos, setPedidos]   = useState([])
+  const [errorRuta, setErrorRuta] = useState('')
   const [asistencia, setAsistencia] = useState(null)
   const [loading, setLoading]   = useState(true)
   const [mensaje, setMensaje]   = useState('')
@@ -100,6 +103,11 @@ const Dashboard = () => {
   const [errorEntrega, setErrorEntrega]             = useState('')
 
   const ejecutarCierreReparto = async () => {
+    if (!isOnline) {
+      mostrarMensaje('Necesitas conexión para cerrar el reparto.')
+      return
+    }
+
     setCerrandoReparto(true)
     try {
       await api.patch(`/rutas/${ruta.cod_ruta}/cerrar`)
@@ -113,6 +121,11 @@ const Dashboard = () => {
   }
 
   const marcarEntrada = async () => {
+    if (!isOnline) {
+      setErrorAsistencia('Necesitas conexión para registrar asistencia.')
+      return
+    }
+
     setMarcandoAsistencia(true)
     setErrorAsistencia('')
     try {
@@ -130,6 +143,11 @@ const Dashboard = () => {
   }
 
   const marcarSalida = async () => {
+    if (!isOnline) {
+      setErrorAsistencia('Necesitas conexión para registrar asistencia.')
+      return
+    }
+
     setMarcandoAsistencia(true)
     setErrorAsistencia('')
     try {
@@ -157,10 +175,17 @@ const Dashboard = () => {
       const rutaData = data.data
       setRuta(rutaData)
       setPedidos(rutaData ? agruparPedidos(rutaData.pedidos || []) : [])
+      setErrorRuta('')
       setConfirmandoCierre(false)
-    } catch {
+    } catch (err) {
       setRuta(null)
       setPedidos([])
+      setErrorRuta(
+        err.response?.data?.message
+          || (err.response
+            ? 'No se pudo consultar el reparto.'
+            : 'No se pudo consultar el reparto por un problema de conexión.'),
+      )
     } finally {
       setLoading(false)
     }
@@ -201,6 +226,11 @@ const Dashboard = () => {
   }, [cargarRuta, cargarAsistencia])
 
   const ejecutarCambioEstado = async (pedido, body) => {
+    if (!isOnline) {
+      mostrarMensaje('Necesitas conexión para actualizar el pedido.')
+      return
+    }
+
     setAccionando(pedido.id_pedido)
     try {
       await api.patch(`/pedidos/${pedido.id_pedido}/estado`, body)
@@ -221,6 +251,11 @@ const Dashboard = () => {
   }
 
   const confirmarEntrega = async () => {
+    if (!isOnline) {
+      setErrorEntrega('Necesitas conexión para confirmar la entrega.')
+      return
+    }
+
     const { pedido, nuevoEstado } = modalEntrega
 
     if (!motivoEntrega) {
@@ -249,7 +284,7 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-400">
+      <div className="pwa-safe-area flex min-h-screen items-center justify-center text-gray-400">
         Cargando...
       </div>
     )
@@ -262,7 +297,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-5 space-y-4">
+    <div className="pwa-safe-area mx-auto max-w-lg space-y-4 px-4">
 
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-gray-700">{user?.nombre}</p>
@@ -342,7 +377,7 @@ const Dashboard = () => {
 
             <button
               onClick={asistencia?.intervalo_abierto ? marcarSalida : marcarEntrada}
-              disabled={marcandoAsistencia || cargandoAsistencia}
+              disabled={marcandoAsistencia || cargandoAsistencia || !isOnline}
               className={`w-full py-3 text-white rounded-xl text-sm font-semibold active:scale-95 transition disabled:opacity-50 ${
                 asistencia?.intervalo_abierto
                   ? 'bg-gray-700 hover:bg-gray-800'
@@ -364,7 +399,20 @@ const Dashboard = () => {
         )}
       </div>
 
-      {!ruta ? (
+      {errorRuta ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-semibold text-red-700">
+            {errorRuta}
+          </p>
+          <button
+            type="button"
+            onClick={cargarRuta}
+            className="rounded-xl border border-blue-200 px-5 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : !ruta ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-xl font-semibold text-gray-700 mb-2">No tienes repartos activos en este momento.</p>
           <p className="text-gray-400 text-sm">El administrador te asignará una ruta cuando esté lista.</p>
@@ -460,14 +508,14 @@ const Dashboard = () => {
                       <div className="px-4 pb-4 grid grid-cols-2 gap-2">
                         <button
                           onClick={() => ejecutarCambioEstado(p, { estado: 'entregado' })}
-                          disabled={enProceso}
+                          disabled={enProceso || !isOnline}
                           className="py-3 bg-green-500 text-white rounded-xl text-sm font-semibold hover:bg-green-600 active:scale-95 transition disabled:opacity-50"
                         >
                           Entregado
                         </button>
                         <button
                           onClick={() => abrirModalEntrega(p, 'problema_entrega')}
-                          disabled={enProceso}
+                          disabled={enProceso || !isOnline}
                           className="py-3 bg-red-500 text-white rounded-xl text-sm font-semibold hover:bg-red-600 active:scale-95 transition disabled:opacity-50"
                         >
                           Problema de entrega
@@ -484,7 +532,8 @@ const Dashboard = () => {
             {!confirmandoCierre ? (
               <button
                 onClick={() => setConfirmandoCierre(true)}
-                className="w-full py-3 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 active:scale-95 transition"
+                disabled={!isOnline}
+                className="w-full py-3 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 active:scale-95 transition disabled:opacity-50"
               >
                 Cerrar reparto
               </button>
@@ -505,7 +554,7 @@ const Dashboard = () => {
                   </button>
                   <button
                     onClick={ejecutarCierreReparto}
-                    disabled={cerrandoReparto}
+                    disabled={cerrandoReparto || !isOnline}
                     className="flex-1 py-3 bg-red-500 text-white rounded-xl text-sm font-semibold hover:bg-red-600 active:scale-95 transition disabled:opacity-50"
                   >
                     {cerrandoReparto ? 'Cerrando...' : 'Confirmar cierre'}
@@ -518,7 +567,7 @@ const Dashboard = () => {
       )}
 
       {modalEntrega && (
-        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 px-4 pb-6">
+        <div className="pwa-modal-bottom fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
             <div className="px-5 pt-5 pb-5 space-y-4">
 
@@ -573,7 +622,8 @@ const Dashboard = () => {
                 <button
                   type="button"
                   onClick={confirmarEntrega}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white active:scale-95 transition bg-red-500 hover:bg-red-600"
+                  disabled={!isOnline}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white active:scale-95 transition bg-red-500 hover:bg-red-600 disabled:opacity-50"
                 >
                   Confirmar
                 </button>
