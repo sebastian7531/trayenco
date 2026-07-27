@@ -8,6 +8,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import api from '../../services/api'
 import socket, { conectarSocket, desconectarSocket } from '../../services/socket'
 import { useAuth } from '../../context/AuthContext'
+import { formatearHoras } from '../../utils/asistencia'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, shadowUrl: markerShadow })
@@ -88,6 +89,8 @@ const Dashboard = () => {
   const [accionando, setAccionando] = useState(null)
   const [marcandoAsistencia, setMarcandoAsistencia] = useState(false)
   const [errorAsistencia, setErrorAsistencia] = useState('')
+  const [cargandoAsistencia, setCargandoAsistencia] = useState(true)
+  const [asistenciaConocida, setAsistenciaConocida] = useState(false)
   const [confirmandoCierre, setConfirmandoCierre] = useState(false)
   const [cerrandoReparto, setCerrandoReparto] = useState(false)
 
@@ -114,7 +117,11 @@ const Dashboard = () => {
     setErrorAsistencia('')
     try {
       await api.post('/asistencia/entrada')
-      await cargarAsistencia()
+      try {
+        await cargarAsistencia()
+      } catch {
+        setErrorAsistencia('La entrada fue registrada, pero no se pudo actualizar la vista.')
+      }
     } catch (err) {
       setErrorAsistencia(err.response?.data?.message || 'Error al marcar entrada.')
     } finally {
@@ -127,7 +134,11 @@ const Dashboard = () => {
     setErrorAsistencia('')
     try {
       await api.post('/asistencia/salida')
-      await cargarAsistencia()
+      try {
+        await cargarAsistencia()
+      } catch {
+        setErrorAsistencia('La salida fue registrada, pero no se pudo actualizar la vista.')
+      }
     } catch (err) {
       setErrorAsistencia(err.response?.data?.message || 'Error al marcar salida.')
     } finally {
@@ -156,16 +167,25 @@ const Dashboard = () => {
   }, [])
 
   const cargarAsistencia = useCallback(async () => {
+    setCargandoAsistencia(true)
+    setAsistenciaConocida(false)
     try {
       const { data } = await api.get('/asistencia/hoy')
       const miRegistro = data.data.find(r => r.id_repartidor === user?.id)
       setAsistencia(miRegistro || null)
-    } catch {}
+      setAsistenciaConocida(true)
+      setErrorAsistencia('')
+    } catch (err) {
+      setErrorAsistencia(err.response?.data?.message || 'No se pudo cargar la asistencia.')
+      throw err
+    } finally {
+      setCargandoAsistencia(false)
+    }
   }, [user?.id])
 
   useEffect(() => {
     cargarRuta()
-    cargarAsistencia()
+    cargarAsistencia().catch(() => {})
     conectarSocket('repartidor')
 
     socket.on('ruta_actualizada', cargarRuta)
@@ -261,39 +281,82 @@ const Dashboard = () => {
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 space-y-3">
-        {(!asistencia || !asistencia.hora_entrada) ? (
-          <>
-            <p className="text-sm text-gray-400 text-center">Sin registro de asistencia hoy.</p>
-            <button
-              onClick={marcarEntrada}
-              disabled={marcandoAsistencia}
-              className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 active:scale-95 transition disabled:opacity-50"
-            >
-              {marcandoAsistencia ? 'Registrando...' : 'Marcar entrada'}
-            </button>
-          </>
+        {cargandoAsistencia ? (
+          <p className="text-sm text-gray-400 text-center py-2">Cargando asistencia...</p>
+        ) : !asistenciaConocida ? (
+          <button
+            onClick={() => cargarAsistencia().catch(() => {})}
+            className="w-full py-3 border border-blue-200 text-blue-700 rounded-xl text-sm font-semibold hover:bg-blue-50 transition"
+          >
+            Reintentar carga de asistencia
+          </button>
         ) : (
           <>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex gap-4 text-sm text-gray-600">
-                <span>Entrada: <span className="font-semibold text-gray-800">{asistencia.hora_entrada.slice(0, 5)}</span></span>
-                {asistencia.hora_salida && (
-                  <span>Salida: <span className="font-semibold text-gray-800">{asistencia.hora_salida.slice(0, 5)}</span></span>
-                )}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs text-gray-500">Total acumulado de hoy</p>
+                <p className="text-lg font-bold text-green-700">
+                  {formatearHoras(asistencia?.total_horas)}
+                </p>
               </div>
-              {asistencia.horas_trabajadas && (
-                <span className="text-sm font-semibold text-green-700">{asistencia.horas_trabajadas} h trabajadas</span>
+              {asistencia?.intervalo_abierto && (
+                <span className="text-xs font-medium bg-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full">
+                  En turno
+                </span>
               )}
             </div>
-            {!asistencia.hora_salida && (
-              <button
-                onClick={marcarSalida}
-                disabled={marcandoAsistencia}
-                className="w-full py-3 bg-gray-700 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 active:scale-95 transition disabled:opacity-50"
-              >
-                {marcandoAsistencia ? 'Registrando...' : 'Marcar salida'}
-              </button>
+
+            {(asistencia?.intervalos || []).length === 0 ? (
+              <p className="text-sm text-gray-400 text-center">Sin intervalos registrados hoy.</p>
+            ) : (
+              <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                {(asistencia?.intervalos || []).map((intervalo, index) => (
+                  <div
+                    key={intervalo.id_registro}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="text-gray-500">Intervalo {index + 1}</span>
+                    <span className="text-gray-700">
+                      {intervalo.hora_entrada?.slice(0, 5)}
+                      {' — '}
+                      {intervalo.hora_salida?.slice(0, 5) || 'En curso'}
+                    </span>
+                    <span className="font-semibold text-gray-700">
+                      {intervalo.horas_trabajadas != null
+                        ? formatearHoras(intervalo.horas_trabajadas)
+                        : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
+
+            {asistencia?.intervalo_abierto && (
+              <p className="text-xs text-gray-500 text-center">
+                Intervalo abierto desde {asistencia.intervalo_abierto.hora_entrada?.slice(0, 5)}
+                {asistencia.intervalo_abierto.fecha !== asistencia.fecha
+                  ? ` del ${asistencia.intervalo_abierto.fecha}`
+                  : ''}
+              </p>
+            )}
+
+            <button
+              onClick={asistencia?.intervalo_abierto ? marcarSalida : marcarEntrada}
+              disabled={marcandoAsistencia || cargandoAsistencia}
+              className={`w-full py-3 text-white rounded-xl text-sm font-semibold active:scale-95 transition disabled:opacity-50 ${
+                asistencia?.intervalo_abierto
+                  ? 'bg-gray-700 hover:bg-gray-800'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {marcandoAsistencia
+                ? 'Registrando...'
+                : asistencia?.intervalo_abierto
+                  ? 'Marcar salida'
+                  : (asistencia?.intervalos || []).length > 0
+                    ? 'Marcar nueva entrada'
+                    : 'Marcar entrada'}
+            </button>
           </>
         )}
         {errorAsistencia && (

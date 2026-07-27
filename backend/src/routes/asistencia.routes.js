@@ -1,5 +1,6 @@
 const { Router } = require('express');
-const { verifyToken } = require('../middleware/auth.middleware');
+const { verifyToken, requireAdmin } = require('../middleware/auth.middleware');
+const { error } = require('../utils/response');
 const {
   getAsistencia,
   getAsistenciaHoy,
@@ -10,12 +11,23 @@ const {
 
 const router = Router();
 
+const requireRepartidor = (req, res, next) => {
+  if (!req.user || req.user.rol !== 'repartidor') {
+    return error(res, 'Acceso denegado: se requiere rol repartidor', 403);
+  }
+  next();
+};
+
 router.use(verifyToken);
 
-router.get('/', getAsistencia);
 router.get('/hoy', getAsistenciaHoy);
-router.post('/entrada', registrarEntrada);
-router.post('/salida', registrarSalida);
-router.get('/reporte/:repartidor_id', getReporteAsistencia);
+router.get('/', requireAdmin, getAsistencia);
+router.post('/entrada', requireRepartidor, registrarEntrada);
+router.post('/salida', requireRepartidor, registrarSalida);
+router.get(
+  '/reporte/:repartidor_id',
+  requireAdmin,
+  getReporteAsistencia
+);
 
 module.exports = router;

@@ -81,13 +81,17 @@ CREATE TABLE stock (
 -- tablas intermedias
 
 CREATE TABLE repartidor_asistencia (
-  id_repartidor    INTEGER REFERENCES repartidor(id_repartidor),
-  id_asistencia    INTEGER REFERENCES asistencia(id_asistencia),
-  hora_entrada     TIME,
+  id_registro      SERIAL PRIMARY KEY,
+  id_repartidor    INTEGER NOT NULL REFERENCES repartidor(id_repartidor),
+  id_asistencia    INTEGER NOT NULL REFERENCES asistencia(id_asistencia),
+  hora_entrada     TIME NOT NULL,
   hora_salida      TIME,
-  horas_trabajadas DECIMAL(4,2),
-  PRIMARY KEY (id_repartidor, id_asistencia)
+  horas_trabajadas DECIMAL(4,2)
 );
+
+CREATE UNIQUE INDEX uq_repartidor_intervalo_abierto
+  ON repartidor_asistencia(id_repartidor)
+  WHERE hora_salida IS NULL;
 
 CREATE TABLE solicita (
   id_pedido  INTEGER REFERENCES pedidos(id_pedido),
