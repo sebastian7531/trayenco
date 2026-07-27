@@ -61,34 +61,50 @@ const getPedidoById = async (id) => {
 };
 
 const createPedido = async ({ cod_ruta, id_cliente, lineas, prioridad }) => {
-  const cliente = await pool.query(
-    'SELECT id_cliente FROM clientes WHERE id_cliente = $1 AND activo = true',
-    [id_cliente]
-  );
-  if (cliente.rows.length === 0) throw new Error('Cliente no encontrado');
+  const cliente_db = await pool.connect();
+  try {
+    await cliente_db.query('BEGIN');
+    const cliente = await cliente_db.query(
+      'SELECT id_cliente FROM clientes WHERE id_cliente = $1 AND activo = true',
+      [id_cliente]
+    );
+    if (cliente.rows.length === 0) throw new Error('Cliente no encontrado');
 
-  const prioridadFinal = prioridad === 'urgente' ? 'urgente' : 'normal';
-  const pedido = await pool.query(
-    'INSERT INTO pedidos (cod_ruta, prioridad) VALUES ($1, $2) RETURNING id_pedido',
-    [cod_ruta || null, prioridadFinal]
-  );
-  const id_pedido = pedido.rows[0].id_pedido;
+    const codigosBidon = lineas.map(({ cod_bidon }) => Number(cod_bidon));
+    const bidones = await cliente_db.query(
+      'SELECT cod_bidon FROM bidones WHERE cod_bidon = ANY($1::int[])',
+      [codigosBidon]
+    );
+    if (bidones.rows.length !== new Set(codigosBidon).size) {
+      throw new Error('Uno o más tipos de bidón no existen');
+    }
 
-  await Promise.all(
-    lineas.map(({ cod_bidon, cantidad }) =>
-      pool.query(
+    const prioridadFinal = prioridad === 'urgente' ? 'urgente' : 'normal';
+    const pedido = await cliente_db.query(
+      'INSERT INTO pedidos (cod_ruta, prioridad) VALUES ($1, $2) RETURNING id_pedido',
+      [cod_ruta || null, prioridadFinal]
+    );
+    const id_pedido = pedido.rows[0].id_pedido;
+
+    for (const { cod_bidon, cantidad } of lineas) {
+      await cliente_db.query(
         'INSERT INTO solicita (id_pedido, id_cliente, cod_bidon, cantidad) VALUES ($1, $2, $3, $4)',
-        [id_pedido, id_cliente, cod_bidon, cantidad]
-      )
-    )
-  );
+        [id_pedido, id_cliente, Number(cod_bidon), Number(cantidad)]
+      );
+    }
 
-  await pool.query(
-    'INSERT INTO pedido_estado (id_pedido, cod_estado, cantidad_entregada) VALUES ($1, 1, 0)',
-    [id_pedido]
-  );
-
-  return getPedidoById(id_pedido);
+    await cliente_db.query(
+      'INSERT INTO pedido_estado (id_pedido, cod_estado, cantidad_entregada) VALUES ($1, 1, 0)',
+      [id_pedido]
+    );
+    await cliente_db.query('COMMIT');
+    return getPedidoById(id_pedido);
+  } catch (err) {
+    await cliente_db.query('ROLLBACK');
+    throw err;
+  } finally {
+    cliente_db.release();
+  }
 };
 
 const updatePedido = async (id, { lineas, prioridad }) => {
@@ -275,13 +291,30 @@ const getPedidosPendientes = async () => {
   return result.rows;
 };
 
-const getPedidoRutaRepartidor = async (id_pedido) => {
+const getPedidoRutaRepartidor = async (id_pedido, id_repartidor) => {
   const result = await pool.query(
-    `SELECT r.id_repartidor
-     FROM pedidos p
-     LEFT JOIN ruta r ON r.cod_ruta = p.cod_ruta
-     WHERE p.id_pedido = $1`,
-    [id_pedido]
+    `SELECT EXISTS (
+       SELECT 1
+       FROM pedidos p
+       JOIN ruta r ON r.cod_ruta = p.cod_ruta
+       WHERE p.id_pedido = $1
+         AND (
+           EXISTS (
+             SELECT 1
+             FROM ruta_repartidor rr
+             WHERE rr.cod_ruta = r.cod_ruta
+               AND rr.id_repartidor = $2
+           )
+           OR (
+             r.id_repartidor = $2
+             AND NOT EXISTS (
+               SELECT 1 FROM ruta_repartidor rr_legacy WHERE rr_legacy.cod_ruta = r.cod_ruta
+             )
+           )
+         )
+     ) AS asignado
+    `,
+    [id_pedido, id_repartidor]
   );
   return result.rows[0] || null;
 };

@@ -5,6 +5,7 @@ const {
   getRutaById,
   miRutaHoy,
   createRuta,
+  actualizarRepartidores,
   asignarPedidos,
   generarOrdenOptimo,
   actualizarOrden,
@@ -19,6 +20,7 @@ router.get('/', getRutas);
 router.get('/mi-ruta-hoy', miRutaHoy);
 router.get('/:id', getRutaById);
 router.post('/', requireAdmin, createRuta);
+router.patch('/:id/repartidores', requireAdmin, actualizarRepartidores);
 router.post('/:id/pedidos', requireAdmin, asignarPedidos);
 router.post('/:id/optimizar', requireAdmin, generarOrdenOptimo);
 router.put('/:id/orden', requireAdmin, actualizarOrden);

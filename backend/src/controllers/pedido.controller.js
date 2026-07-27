@@ -27,8 +27,16 @@ const createPedido = async (req, res) => {
     if (!Array.isArray(lineas) || lineas.length === 0) {
       return error(res, 'Debe agregar al menos una línea de bidón', 400);
     }
+    const codigosBidon = new Set();
     for (const linea of lineas) {
-      if (!linea.cod_bidon) return error(res, 'Cada línea debe tener un tipo de bidón', 400);
+      const codBidon = Number(linea.cod_bidon);
+      if (!Number.isInteger(codBidon) || codBidon <= 0) {
+        return error(res, 'Cada línea debe tener un tipo de bidón válido', 400);
+      }
+      if (codigosBidon.has(codBidon)) {
+        return error(res, 'No se puede repetir el mismo tipo de bidón en un pedido', 400);
+      }
+      codigosBidon.add(codBidon);
       const cantidadNum = Number(linea.cantidad);
       if (!Number.isInteger(cantidadNum) || cantidadNum < 1 || cantidadNum > 100) {
         return error(res, 'La cantidad de cada línea debe ser un entero entre 1 y 100', 400);
@@ -41,7 +49,8 @@ const createPedido = async (req, res) => {
     io.to('administradores').emit('pedido_creado', data);
     return success(res, data, 'Pedido creado', 201);
   } catch (err) {
-    const status = err.message === 'Cliente no encontrado' ? 404 : 500;
+    const status = err.message === 'Cliente no encontrado' ? 404
+      : err.message.includes('tipos de bidón') ? 400 : 500;
     return error(res, err.message, status);
   }
 };
@@ -80,8 +89,8 @@ const cambiarEstado = async (req, res) => {
       return error(res, 'Debe indicar un motivo cuando hay problema de entrega', 400);
     }
     if (req.user.rol === 'repartidor') {
-      const rutaInfo = await service.getPedidoRutaRepartidor(req.params.id);
-      if (!rutaInfo || rutaInfo.id_repartidor !== req.user.id) {
+      const rutaInfo = await service.getPedidoRutaRepartidor(req.params.id, req.user.id);
+      if (!rutaInfo?.asignado) {
         return error(res, 'Solo puedes cambiar el estado de pedidos de tu propia ruta', 403);
       }
     }

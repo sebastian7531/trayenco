@@ -1,10 +1,56 @@
 import { useState, useEffect } from 'react'
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerIconRetina from 'leaflet/dist/images/marker-icon-2x.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import autoTable from 'jspdf-autotable'
 import api from '../../services/api'
 import { crearDocumentoPDF, agregarPiePDF } from '../../utils/pdfHelper'
 
+const CENTRO_TOME = [-36.6108, -72.9539]
+
+const iconoUbicacion = L.icon({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIconRetina,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+})
+
 const FORM_VACIO    = { nombre: '', telefono: '', direccion: '', cod_zona: '' }
 const ERRORES_VACIO = { nombre: '', telefono: '', direccion: '' }
+
+const tieneCoordenadas = (cliente) =>
+  cliente.latitud !== null && cliente.latitud !== undefined &&
+  cliente.longitud !== null && cliente.longitud !== undefined
+
+const SelectorUbicacion = ({ posicion, onSeleccionar }) => {
+  useMapEvents({
+    click(e) {
+      onSeleccionar({ latitud: e.latlng.lat, longitud: e.latlng.lng })
+    },
+  })
+
+  return posicion
+    ? <Marker position={[posicion.latitud, posicion.longitud]} icon={iconoUbicacion} />
+    : null
+}
+
+const CentrarMapa = ({ posicion }) => {
+  const map = useMap()
+
+  useEffect(() => {
+    if (posicion) {
+      map.setView([posicion.latitud, posicion.longitud], 16)
+    }
+  }, [map, posicion])
+
+  return null
+}
 
 const validarCampo = (name, value) => {
   switch (name) {
@@ -55,6 +101,15 @@ const Clientes = () => {
   const [errores, setErrores]                 = useState(ERRORES_VACIO)
   const [guardando, setGuardando]             = useState(false)
   const [errorModal, setErrorModal]           = useState('')
+
+  const [clienteUbicacion, setClienteUbicacion] = useState(null)
+  const [posicionSeleccionada, setPosicionSeleccionada] = useState(null)
+  const [guardandoUbicacion, setGuardandoUbicacion] = useState(false)
+  const [errorUbicacion, setErrorUbicacion] = useState('')
+  const [direccionBusqueda, setDireccionBusqueda] = useState('')
+  const [buscandoDireccion, setBuscandoDireccion] = useState(false)
+  const [resultadoBusqueda, setResultadoBusqueda] = useState(null)
+  const [centroBusqueda, setCentroBusqueda] = useState(null)
 
   const cargarDatos = async () => {
     try {
@@ -174,6 +229,91 @@ const Clientes = () => {
     }
   }
 
+  const abrirSelectorUbicacion = (cliente) => {
+    setClienteUbicacion(cliente)
+    setPosicionSeleccionada(null)
+    setErrorUbicacion('')
+    setDireccionBusqueda(cliente.direccion || '')
+    setBuscandoDireccion(false)
+    setResultadoBusqueda(null)
+    setCentroBusqueda(null)
+  }
+
+  const cerrarSelectorUbicacion = () => {
+    setClienteUbicacion(null)
+    setPosicionSeleccionada(null)
+    setErrorUbicacion('')
+    setDireccionBusqueda('')
+    setBuscandoDireccion(false)
+    setResultadoBusqueda(null)
+    setCentroBusqueda(null)
+  }
+
+  const buscarDireccion = async (e) => {
+    e.preventDefault()
+    const direccion = direccionBusqueda.trim()
+    if (!direccion) {
+      setResultadoBusqueda({ tipo: 'error', mensaje: 'Ingresa una dirección para buscar.' })
+      return
+    }
+
+    setBuscandoDireccion(true)
+    setResultadoBusqueda(null)
+    try {
+      const query = encodeURIComponent(`${direccion}, Tomé, Biobío, Chile`)
+      const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&countrycodes=cl`
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('No se pudo consultar Nominatim')
+
+      const data = await response.json()
+      if (!data.length) {
+        setResultadoBusqueda({
+          tipo: 'error',
+          mensaje: 'No se encontró la dirección. Puedes seleccionar la ubicación manualmente en el mapa.',
+        })
+        return
+      }
+
+      const posicion = {
+        latitud: Number(data[0].lat),
+        longitud: Number(data[0].lon),
+      }
+      setPosicionSeleccionada(posicion)
+      setCentroBusqueda(posicion)
+      setResultadoBusqueda({
+        tipo: 'exito',
+        mensaje: 'Dirección encontrada. Puedes ajustar manualmente la posición haciendo clic en el mapa.',
+      })
+    } catch {
+      setResultadoBusqueda({
+        tipo: 'error',
+        mensaje: 'No se pudo buscar la dirección. Puedes seleccionar la ubicación manualmente en el mapa.',
+      })
+    } finally {
+      setBuscandoDireccion(false)
+    }
+  }
+
+  const guardarUbicacion = async () => {
+    if (!clienteUbicacion || !posicionSeleccionada) return
+
+    setGuardandoUbicacion(true)
+    setErrorUbicacion('')
+    try {
+      await api.patch(`/clientes/${clienteUbicacion.id_cliente}/coordenadas`, {
+        latitud: posicionSeleccionada.latitud,
+        longitud: posicionSeleccionada.longitud,
+      })
+      cerrarSelectorUbicacion()
+      await cargarDatos()
+      mostrarMensaje('Ubicación guardada correctamente.')
+    } catch (err) {
+      setErrorUbicacion(err.response?.data?.message || 'Error al guardar la ubicación.')
+    } finally {
+      setGuardandoUbicacion(false)
+    }
+  }
+
   const mostrarMensaje = (texto) => {
     setMensaje(texto)
     setTimeout(() => setMensaje(''), 4000)
@@ -277,16 +417,22 @@ const Clientes = () => {
                   <td className="px-4 py-3 text-gray-600">{c.direccion}</td>
                   <td className="px-4 py-3 text-gray-600">{nombreZona(c.cod_zona)}</td>
                   <td className="px-4 py-3">
-                    {c.latitud && c.longitud ? (
-                      <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                        Con GPS
-                      </span>
+                    {tieneCoordenadas(c) ? (
+                      <div className="text-xs text-gray-600 leading-5">
+                        <div>Lat: {Number(c.latitud).toFixed(6)}</div>
+                        <div>Lng: {Number(c.longitud).toFixed(6)}</div>
+                      </div>
                     ) : (
-                      <span className="inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 inline-block" />
-                        Sin GPS
-                      </span>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className="text-xs text-gray-500">Sin coordenadas</span>
+                        <button
+                          type="button"
+                          onClick={() => abrirSelectorUbicacion(c)}
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium transition"
+                        >
+                          Seleccionar ubicación
+                        </button>
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -453,6 +599,96 @@ const Clientes = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {clienteUbicacion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800">Seleccionar ubicación</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {clienteUbicacion.nombre} — {clienteUbicacion.direccion}
+              </p>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <form onSubmit={buscarDireccion} className="flex items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Buscar dirección</label>
+                  <input
+                    type="text"
+                    value={direccionBusqueda}
+                    onChange={(e) => setDireccionBusqueda(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={buscandoDireccion}
+                  className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition disabled:opacity-50"
+                >
+                  {buscandoDireccion ? 'Buscando...' : 'Buscar'}
+                </button>
+              </form>
+
+              {resultadoBusqueda && (
+                <p className={`text-sm rounded-lg border px-4 py-3 ${
+                  resultadoBusqueda.tipo === 'exito'
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}>
+                  {resultadoBusqueda.mensaje}
+                </p>
+              )}
+
+              <p className="text-sm text-gray-600">Haz clic sobre el mapa para marcar el domicilio del cliente.</p>
+
+              <div className="h-80 rounded-lg overflow-hidden border border-gray-200">
+                <MapContainer center={CENTRO_TOME} zoom={14} className="h-full w-full">
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <SelectorUbicacion
+                    posicion={posicionSeleccionada}
+                    onSeleccionar={setPosicionSeleccionada}
+                  />
+                  <CentrarMapa posicion={centroBusqueda} />
+                </MapContainer>
+              </div>
+
+              {posicionSeleccionada ? (
+                <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-lg px-4 py-3 text-sm">
+                  <div>Lat: {Number(posicionSeleccionada.latitud).toFixed(6)}</div>
+                  <div>Lng: {Number(posicionSeleccionada.longitud).toFixed(6)}</div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">Aún no se ha seleccionado una ubicación.</p>
+              )}
+
+              {errorUbicacion && <p className="text-red-500 text-sm">{errorUbicacion}</p>}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={cerrarSelectorUbicacion}
+                  disabled={guardandoUbicacion}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={guardarUbicacion}
+                  disabled={!posicionSeleccionada || guardandoUbicacion}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {guardandoUbicacion ? 'Guardando...' : 'Guardar ubicación'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

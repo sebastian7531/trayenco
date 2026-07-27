@@ -21,10 +21,24 @@ const resumenDiario = async (fecha) => {
     ),
     pool.query(
       `SELECT
-         COALESCE(SUM(bidones_planta), 0)::int      AS bidones_planta,
-         COALESCE(SUM(bidones_entregados), 0)::int  AS bidones_entregados,
-         COALESCE(SUM(bidones_retornados), 0)::int  AS bidones_retornados
-       FROM stock WHERE fecha = $1`,
+         COALESCE(SUM(s.bidones_planta), 0)::int      AS bidones_planta,
+         COALESCE(SUM(s.bidones_entregados), 0)::int  AS bidones_entregados,
+         COALESCE(SUM(s.bidones_retornados), 0)::int  AS bidones_retornados,
+         COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '10 litros'), 0)::int
+           AS bidones_planta_10l,
+         COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '20 litros'), 0)::int
+           AS bidones_planta_20l,
+         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+           AS bidones_entregados_10l,
+         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+           AS bidones_entregados_20l,
+         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+           AS bidones_retornados_10l,
+         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+           AS bidones_retornados_20l
+       FROM stock s
+       LEFT JOIN bidones b ON b.cod_bidon = s.cod_bidon
+       WHERE s.fecha = $1`,
       [fecha]
     ),
   ]);
@@ -44,6 +58,12 @@ const resumenDiario = async (fecha) => {
       bidones_planta:      s.bidones_planta,
       bidones_entregados:  s.bidones_entregados,
       bidones_retornados:  s.bidones_retornados,
+      bidones_planta_10l:      s.bidones_planta_10l,
+      bidones_planta_20l:      s.bidones_planta_20l,
+      bidones_entregados_10l:  s.bidones_entregados_10l,
+      bidones_entregados_20l:  s.bidones_entregados_20l,
+      bidones_retornados_10l:  s.bidones_retornados_10l,
+      bidones_retornados_20l:  s.bidones_retornados_20l,
     },
   };
 };
@@ -93,14 +113,31 @@ const stockHistorico = async (fecha_inicio, fecha_fin) => {
   const result = await pool.query(
     `SELECT
        fecha,
-       SUM(bidones_planta)::int      AS bidones_planta,
-       SUM(bidones_cargados)::int    AS bidones_cargados,
-       SUM(bidones_entregados)::int  AS bidones_entregados,
-       SUM(bidones_retornados)::int  AS bidones_retornados
-     FROM stock
-     WHERE fecha BETWEEN $1 AND $2
-     GROUP BY fecha
-     ORDER BY fecha ASC`,
+       SUM(s.bidones_planta)::int      AS bidones_planta,
+       SUM(s.bidones_cargados)::int    AS bidones_cargados,
+       SUM(s.bidones_entregados)::int  AS bidones_entregados,
+       SUM(s.bidones_retornados)::int  AS bidones_retornados,
+       COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         AS bidones_planta_10l,
+       COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         AS bidones_planta_20l,
+       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         AS bidones_cargados_10l,
+       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         AS bidones_cargados_20l,
+       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         AS bidones_entregados_10l,
+       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         AS bidones_entregados_20l,
+       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         AS bidones_retornados_10l,
+       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         AS bidones_retornados_20l
+     FROM stock s
+     LEFT JOIN bidones b ON b.cod_bidon = s.cod_bidon
+     WHERE s.fecha BETWEEN $1 AND $2
+     GROUP BY s.fecha
+     ORDER BY s.fecha ASC`,
     [fecha_inicio, fecha_fin]
   );
   return result.rows;

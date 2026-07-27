@@ -84,8 +84,13 @@ const nombresZonas = (zonas) => {
   return zonas.map(z => z.nombre).join(', ')
 }
 
-const FORM_VACIO    = { id_repartidor: '', cod_zonas: [] }
-const ERRORES_VACIO = { id_repartidor: '', cod_zonas: '', pedidos: '' }
+const nombresRepartidores = (ruta) => {
+  if (ruta?.repartidores?.length > 0) return ruta.repartidores.map(r => r.nombre).join(', ')
+  return ruta?.repartidor_nombre || null
+}
+
+const FORM_VACIO    = { repartidor_ids: [], cod_zonas: [] }
+const ERRORES_VACIO = { repartidor_ids: '', cod_zonas: '', pedidos: '' }
 
 const Rutas = () => {
   const [rutas, setRutas]                           = useState([])
@@ -119,6 +124,11 @@ const Rutas = () => {
   const [errorAgregar, setErrorAgregar]                   = useState('')
   const [confirmarReoptimizar, setConfirmarReoptimizar]   = useState(false)
 
+  const [modalRepartidores, setModalRepartidores]               = useState(false)
+  const [repartidorIdsEditando, setRepartidorIdsEditando]       = useState([])
+  const [guardandoRepartidores, setGuardandoRepartidores]       = useState(false)
+  const [errorRepartidores, setErrorRepartidores]               = useState('')
+
   const rutaSeleccionadaIdRef = useRef(null)
   useEffect(() => { rutaSeleccionadaIdRef.current = rutaSeleccionadaId }, [rutaSeleccionadaId])
 
@@ -131,7 +141,7 @@ const Rutas = () => {
         api.get('/zonas'),
       ])
       setRutas(resRutas.data.data)
-      setRepartidores(resRepartidores.data.data)
+      setRepartidores(resRepartidores.data.data.filter(u => u.rol === 'repartidor'))
       setZonas(resZonas.data.data)
     } catch {
       setError('No se pudieron cargar las rutas.')
@@ -197,7 +207,7 @@ const Rutas = () => {
     }
     cargar()
     return () => { activo = false }
-  }, [zonasKey, modalNueva])
+  }, [zonasKey, modalNueva, formRuta.cod_zonas.length])
 
   const seleccionarRuta = (ruta) => {
     setRutaSeleccionadaId(ruta.cod_ruta)
@@ -234,10 +244,14 @@ const Rutas = () => {
     setErroresRuta(prev => ({ ...prev, cod_zonas: '' }))
   }
 
-  const handleRepartidorChange = (e) => {
-    const value = e.target.value
-    setFormRuta(prev => ({ ...prev, id_repartidor: value }))
-    setErroresRuta(prev => ({ ...prev, id_repartidor: value ? '' : 'El repartidor es requerido' }))
+  const toggleRepartidorRuta = (id_repartidor) => {
+    setFormRuta(prev => ({
+      ...prev,
+      repartidor_ids: prev.repartidor_ids.includes(id_repartidor)
+        ? prev.repartidor_ids.filter(id => id !== id_repartidor)
+        : [...prev.repartidor_ids, id_repartidor],
+    }))
+    setErroresRuta(prev => ({ ...prev, repartidor_ids: '' }))
   }
 
   const togglePedido = (id_pedido) => {
@@ -251,7 +265,7 @@ const Rutas = () => {
     e.preventDefault()
     const errores = {
       cod_zonas:     formRuta.cod_zonas.length > 0 ? '' : 'Debe seleccionar al menos una zona',
-      id_repartidor: formRuta.id_repartidor ? '' : 'El repartidor es requerido',
+      repartidor_ids: formRuta.repartidor_ids.length > 0 ? '' : 'Debe seleccionar al menos un repartidor',
       pedidos:       pedidosSeleccionados.length > 0 ? '' : 'Debe seleccionar al menos un pedido',
     }
     setErroresRuta(errores)
@@ -263,7 +277,7 @@ const Rutas = () => {
       const { data: dataRuta } = await api.post('/rutas', {
         fecha:            hoyISO(),
         cod_zonas:        formRuta.cod_zonas,
-        id_repartidor:    Number(formRuta.id_repartidor),
+        repartidor_ids:   formRuta.repartidor_ids,
         cantidad_bidones: totalBidonesSeleccionados || null,
       })
       const nuevaRuta = dataRuta.data
@@ -288,21 +302,6 @@ const Rutas = () => {
       setErrorCrear(err.response?.data?.message || 'Error al crear la ruta.')
     } finally {
       setGuardandoRuta(false)
-    }
-  }
-
-  const handleOptimizar = async () => {
-    setOptimizando(true)
-    setError('')
-    try {
-      const { data } = await api.post(`/rutas/${rutaDetalle.cod_ruta}/optimizar`)
-      setAdvertenciaOptimizar(data.data?.aviso || '')
-      mostrarMensaje('Orden de entrega optimizado.')
-      cargarDetalle(rutaDetalle.cod_ruta)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Error al optimizar la ruta.')
-    } finally {
-      setOptimizando(false)
     }
   }
 
@@ -349,6 +348,45 @@ const Rutas = () => {
     }
   }
 
+  const abrirEditarRepartidores = () => {
+    const ids = rutaDetalle.repartidores?.length > 0
+      ? rutaDetalle.repartidores.map(r => Number(r.id_repartidor))
+      : rutaDetalle.id_repartidor ? [Number(rutaDetalle.id_repartidor)] : []
+    setRepartidorIdsEditando(ids)
+    setErrorRepartidores('')
+    setModalRepartidores(true)
+  }
+
+  const toggleRepartidorEditando = (id_repartidor) => {
+    setRepartidorIdsEditando(prev => prev.includes(id_repartidor)
+      ? prev.filter(id => id !== id_repartidor)
+      : [...prev, id_repartidor]
+    )
+    setErrorRepartidores('')
+  }
+
+  const handleGuardarRepartidores = async () => {
+    if (repartidorIdsEditando.length === 0) {
+      setErrorRepartidores('Debe seleccionar al menos un repartidor.')
+      return
+    }
+    setGuardandoRepartidores(true)
+    setErrorRepartidores('')
+    try {
+      const { data } = await api.patch(`/rutas/${rutaDetalle.cod_ruta}/repartidores`, {
+        repartidor_ids: repartidorIdsEditando,
+      })
+      setRutaDetalle(data.data)
+      setModalRepartidores(false)
+      mostrarMensaje('Repartidores de la ruta actualizados.')
+      await cargarDatos()
+    } catch (err) {
+      setErrorRepartidores(err.response?.data?.message || 'No se pudieron actualizar los repartidores.')
+    } finally {
+      setGuardandoRepartidores(false)
+    }
+  }
+
   const handleReoptimizar = async () => {
     setOptimizando(true)
     setError('')
@@ -380,11 +418,6 @@ const Rutas = () => {
     TRAYENCO,
     ...pedidosConCoordenadas.map(p => [parseFloat(p.latitud), parseFloat(p.longitud)]),
   ]
-
-  const inputClase = (campo) =>
-    `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-      erroresRuta[campo] ? 'border-red-400' : 'border-gray-300'
-    }`
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -418,7 +451,7 @@ const Rutas = () => {
               >
                 <p className="text-sm font-medium text-gray-800">{fmt(r.fecha)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {r.repartidor_nombre || 'Sin repartidor'} · {r.total_pedidos} pedido(s)
+                  {nombresRepartidores(r) || 'Sin repartidor'} · {r.total_pedidos} pedido(s)
                 </p>
                 {r.zonas?.length > 0 && (
                   <p className="text-xs text-gray-400 mt-0.5">{nombresZonas(r.zonas)}</p>
@@ -464,7 +497,7 @@ const Rutas = () => {
                     Ruta del {fmt(rutaDetalle.fecha)}
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {rutaDetalle.repartidor_nombre || 'Sin repartidor'}
+                    {nombresRepartidores(rutaDetalle) || 'Sin repartidor'}
                     {nombresZonas(rutaDetalle.zonas) && ` · ${nombresZonas(rutaDetalle.zonas)}`}
                     {rutaDetalle.cantidad_bidones && ` · ${rutaDetalle.cantidad_bidones} bidón(es)`}
                   </p>
@@ -474,6 +507,12 @@ const Rutas = () => {
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                  <button
+                    onClick={abrirEditarRepartidores}
+                    className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition"
+                  >
+                    Editar repartidores
+                  </button>
                   <button
                     onClick={abrirModalAgregar}
                     className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition"
@@ -676,6 +715,52 @@ const Rutas = () => {
         </div>
       )}
 
+      {modalRepartidores && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[1000]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800">Repartidores de la ruta</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Selecciona uno o más repartidores.</p>
+            </div>
+            <div className="px-6 py-4 space-y-2">
+              {repartidores.map(r => (
+                <label
+                  key={r.id_repartidor}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={repartidorIdsEditando.includes(r.id_repartidor)}
+                    onChange={() => toggleRepartidorEditando(r.id_repartidor)}
+                    className="w-4 h-4 rounded accent-blue-600"
+                  />
+                  <span className="text-sm font-medium text-gray-800">{r.nombre}</span>
+                </label>
+              ))}
+              {errorRepartidores && <p className="text-red-500 text-sm">{errorRepartidores}</p>}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setModalRepartidores(false)}
+                disabled={guardandoRepartidores}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarRepartidores}
+                disabled={guardandoRepartidores}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {guardandoRepartidores ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalNueva && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[1000]">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl mx-4 flex flex-col max-h-[85vh]">
@@ -720,22 +805,30 @@ const Rutas = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Repartidor <span className="text-red-500">*</span>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Repartidores <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    name="id_repartidor"
-                    value={formRuta.id_repartidor}
-                    onChange={handleRepartidorChange}
-                    className={inputClase('id_repartidor')}
-                  >
-                    <option value="">Seleccionar repartidor...</option>
-                    {repartidores.map(r => (
-                      <option key={r.id_repartidor} value={r.id_repartidor}>{r.nombre}</option>
-                    ))}
-                  </select>
-                  {erroresRuta.id_repartidor && (
-                    <p className="text-red-500 text-xs mt-1">{erroresRuta.id_repartidor}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {repartidores.map(r => {
+                      const seleccionado = formRuta.repartidor_ids.includes(r.id_repartidor)
+                      return (
+                        <button
+                          key={r.id_repartidor}
+                          type="button"
+                          onClick={() => toggleRepartidorRuta(r.id_repartidor)}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${
+                            seleccionado
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'
+                          }`}
+                        >
+                          {r.nombre}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {erroresRuta.repartidor_ids && (
+                    <p className="text-red-500 text-xs mt-1">{erroresRuta.repartidor_ids}</p>
                   )}
                 </div>
 

@@ -53,6 +53,15 @@ CREATE TABLE ruta (
   cod_zona         INTEGER REFERENCES zona(cod_zona)
 );
 
+CREATE TABLE ruta_repartidor (
+  cod_ruta       INTEGER NOT NULL REFERENCES ruta(cod_ruta) ON DELETE CASCADE,
+  id_repartidor  INTEGER NOT NULL REFERENCES repartidor(id_repartidor),
+  PRIMARY KEY (cod_ruta, id_repartidor)
+);
+
+CREATE INDEX idx_ruta_repartidor_repartidor
+  ON ruta_repartidor(id_repartidor, cod_ruta);
+
 CREATE TABLE asistencia (
   id_asistencia  SERIAL PRIMARY KEY,
   fecha          DATE NOT NULL DEFAULT CURRENT_DATE,

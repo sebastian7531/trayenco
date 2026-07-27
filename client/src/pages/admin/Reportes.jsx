@@ -106,7 +106,26 @@ const Tarjeta = ({ label, valor, color }) => (
   </div>
 )
 
-const RangoFechas = ({ inicio, fin, setInicio, setFin, onConsultar, cargando, onDescargarPDF, sinDatos }) => (
+const FiltroFormatos = ({ formatosSeleccionados, onCambiarFormato }) => (
+  <div>
+    <span className="block text-xs font-medium text-gray-600 mb-1">Formato</span>
+    <div className="flex items-center gap-3 h-[38px] px-3 border border-gray-300 rounded-lg bg-white">
+      {['10l', '20l'].map((formato) => (
+        <label key={formato} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formatosSeleccionados[formato]}
+            onChange={() => onCambiarFormato(formato)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          {formato === '10l' ? '10 L' : '20 L'}
+        </label>
+      ))}
+    </div>
+  </div>
+)
+
+const RangoFechas = ({ inicio, fin, setInicio, setFin, onConsultar, cargando, onDescargarPDF, sinDatos, children }) => (
   <div className="flex flex-wrap items-end gap-3 mb-6">
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">Desde</label>
@@ -118,6 +137,7 @@ const RangoFechas = ({ inicio, fin, setInicio, setFin, onConsultar, cargando, on
       <input type="date" value={fin} onChange={(e) => setFin(e.target.value)}
         className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
     </div>
+    {children}
     <button onClick={onConsultar} disabled={cargando}
       className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50">
       {cargando ? 'Consultando...' : 'Consultar'}
@@ -131,7 +151,7 @@ const RangoFechas = ({ inicio, fin, setInicio, setFin, onConsultar, cargando, on
   </div>
 )
 
-const TabDiario = () => {
+const TabDiario = ({ formatosSeleccionados, onCambiarFormato }) => {
   const [fecha, setFecha] = useState(hoyISO())
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(false)
@@ -168,14 +188,25 @@ const TabDiario = () => {
 
     let y = agregarEncabezadoPDF(doc, 'Resumen diario', periodo)
 
+    const columnasBidones = []
+    const valoresBidones = []
+    if (formatosSeleccionados['10l']) {
+      columnasBidones.push('Bidones entregados 10 L')
+      valoresBidones.push(String(datos.stock.bidones_entregados_10l ?? 0))
+    }
+    if (formatosSeleccionados['20l']) {
+      columnasBidones.push('Bidones entregados 20 L')
+      valoresBidones.push(String(datos.stock.bidones_entregados_20l ?? 0))
+    }
+
     autoTable(doc, {
       startY: y,
-      head: [['Total pedidos', 'Entregados', 'Problemas de entrega', 'Bidones entregados']],
+      head: [['Total pedidos', 'Entregados', 'Problemas de entrega', ...columnasBidones]],
       body: [[
         String(datos.pedidos.total ?? 0),
         String(datos.pedidos.entregados ?? 0),
         String(datos.pedidos.problemas_entrega ?? 0),
-        String(datos.stock.bidones_entregados ?? 0),
+        ...valoresBidones,
       ]],
       headStyles: { fillColor: AZUL_CLARO, textColor: AZUL, fontSize: 9, fontStyle: 'bold', halign: 'center' },
       bodyStyles: { fontSize: 18, fontStyle: 'bold', halign: 'center', cellPadding: 6 },
@@ -184,6 +215,7 @@ const TabDiario = () => {
         1: { textColor: VERDE },
         2: { textColor: ROJO },
         3: { textColor: AZUL },
+        4: { textColor: AZUL },
       },
       theme: 'grid',
     })
@@ -200,6 +232,10 @@ const TabDiario = () => {
           <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
+        <FiltroFormatos
+          formatosSeleccionados={formatosSeleccionados}
+          onCambiarFormato={onCambiarFormato}
+        />
         <button onClick={consultar} disabled={cargando}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50">
           {cargando ? 'Consultando...' : 'Consultar'}
@@ -218,7 +254,12 @@ const TabDiario = () => {
             <Tarjeta label="Total pedidos"        valor={datos.pedidos.total}               color="border-l-blue-500" />
             <Tarjeta label="Entregados"            valor={datos.pedidos.entregados}          color="border-l-green-500" />
             <Tarjeta label="Problemas de entrega" valor={datos.pedidos.problemas_entrega}    color="border-l-red-500" />
-            <Tarjeta label="Bidones entregados"   valor={datos.stock.bidones_entregados}     color="border-l-orange-500" />
+            {formatosSeleccionados['10l'] && (
+              <Tarjeta label="Bidones entregados 10 L" valor={datos.stock.bidones_entregados_10l} color="border-l-orange-500" />
+            )}
+            {formatosSeleccionados['20l'] && (
+              <Tarjeta label="Bidones entregados 20 L" valor={datos.stock.bidones_entregados_20l} color="border-l-amber-500" />
+            )}
           </div>
 
           {pieData.length > 0 ? (
@@ -393,7 +434,7 @@ const TabRendimiento = () => {
   )
 }
 
-const TabStock = () => {
+const TabStock = ({ formatosSeleccionados, onCambiarFormato }) => {
   const [inicio, setInicio] = useState(haceNDias(30))
   const [fin, setFin] = useState(hoyISO())
   const [datos, setDatos] = useState([])
@@ -418,13 +459,26 @@ const TabStock = () => {
     const doc = new jsPDF()
     let y = agregarEncabezadoPDF(doc, 'Evolución de stock', `${inicio} al ${fin}`)
 
+    const columnasStock = []
+    if (formatosSeleccionados['10l']) {
+      columnasStock.push(
+        { titulo: 'En planta 10 L', campo: 'bidones_planta_10l' },
+        { titulo: 'Entregados 10 L', campo: 'bidones_entregados_10l' },
+      )
+    }
+    if (formatosSeleccionados['20l']) {
+      columnasStock.push(
+        { titulo: 'En planta 20 L', campo: 'bidones_planta_20l' },
+        { titulo: 'Entregados 20 L', campo: 'bidones_entregados_20l' },
+      )
+    }
+
     autoTable(doc, {
       startY: y,
-      head: [['Fecha', 'Bidones en planta', 'Bidones entregados']],
+      head: [['Fecha', ...columnasStock.map((columna) => columna.titulo)]],
       body: datos.map((d) => [
         d.fecha,
-        String(d.bidones_planta ?? 0),
-        String(d.bidones_entregados ?? 0),
+        ...columnasStock.map((columna) => String(d[columna.campo] ?? 0)),
       ]),
       styles: { fontSize: 10 },
       headStyles: { fillColor: AZUL, textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -446,7 +500,12 @@ const TabStock = () => {
         inicio={inicio} fin={fin} setInicio={setInicio} setFin={setFin}
         onConsultar={consultar} cargando={cargando}
         onDescargarPDF={generarPDF} sinDatos={!datos.length}
-      />
+      >
+        <FiltroFormatos
+          formatosSeleccionados={formatosSeleccionados}
+          onCambiarFormato={onCambiarFormato}
+        />
+      </RangoFechas>
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
       {datos.length === 0 ? (
         <p className="text-gray-400 text-sm">Sin datos para el período seleccionado.</p>
@@ -464,14 +523,32 @@ const TabStock = () => {
                   <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
                   <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
                 </linearGradient>
+                <linearGradient id="gradPlanta20" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0891b2" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#0891b2" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradEntregados20" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#d97706" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#d97706" stopOpacity={0} />
+                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="fecha" tick={{ fontSize: 12 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
               <Tooltip />
               <Legend />
-              <Area type="monotone" dataKey="bidones_planta"     name="En planta"  stroke="#2563eb" fill="url(#gradPlanta)"     strokeWidth={2} />
-              <Area type="monotone" dataKey="bidones_entregados" name="Entregados" stroke="#16a34a" fill="url(#gradEntregados)" strokeWidth={2} />
+              {formatosSeleccionados['10l'] && (
+                <Area type="monotone" dataKey="bidones_planta_10l" name="En planta 10 L" stroke="#2563eb" fill="url(#gradPlanta)" strokeWidth={2} />
+              )}
+              {formatosSeleccionados['10l'] && (
+                <Area type="monotone" dataKey="bidones_entregados_10l" name="Entregados 10 L" stroke="#16a34a" fill="url(#gradEntregados)" strokeWidth={2} />
+              )}
+              {formatosSeleccionados['20l'] && (
+                <Area type="monotone" dataKey="bidones_planta_20l" name="En planta 20 L" stroke="#0891b2" fill="url(#gradPlanta20)" strokeWidth={2} />
+              )}
+              {formatosSeleccionados['20l'] && (
+                <Area type="monotone" dataKey="bidones_entregados_20l" name="Entregados 20 L" stroke="#d97706" fill="url(#gradEntregados20)" strokeWidth={2} />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -586,12 +663,21 @@ const TabClientes = () => {
 
 const Reportes = () => {
   const [tabActivo, setTabActivo] = useState('diario')
+  const [formatosSeleccionados, setFormatosSeleccionados] = useState({ '10l': true, '20l': true })
+
+  const cambiarFormato = (formato) => {
+    setFormatosSeleccionados((actuales) => {
+      const otroFormato = formato === '10l' ? '20l' : '10l'
+      if (actuales[formato] && !actuales[otroFormato]) return actuales
+      return { ...actuales, [formato]: !actuales[formato] }
+    })
+  }
 
   const contenido = {
-    diario:      <TabDiario />,
+    diario:      <TabDiario formatosSeleccionados={formatosSeleccionados} onCambiarFormato={cambiarFormato} />,
     pedidos:     <TabPedidos />,
     rendimiento: <TabRendimiento />,
-    stock:       <TabStock />,
+    stock:       <TabStock formatosSeleccionados={formatosSeleccionados} onCambiarFormato={cambiarFormato} />,
     clientes:    <TabClientes />,
   }
 

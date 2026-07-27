@@ -160,14 +160,14 @@ const Stock = () => {
     bidones_retornados: acc.bidones_retornados + (s.bidones_retornados || 0),
   }), { bidones_planta: 0, bidones_cargados: 0, bidones_entregados: 0, bidones_retornados: 0 })
 
-  const disponiblesEnFurgon = totalHoy.bidones_cargados - totalHoy.bidones_entregados
+  const bidonesEnRutaActualmente = totalHoy.bidones_cargados - totalHoy.bidones_entregados
 
   const desglose = (campo) =>
     stockHoy.length
       ? stockHoy.map(s => `${fmtLabel(s.formato)}: ${s[campo] ?? 0}`).join(' | ')
       : null
 
-  const desgloseDisponibles = stockHoy.length
+  const desgloseBidonesEnRuta = stockHoy.length
     ? stockHoy.map(s => `${fmtLabel(s.formato)}: ${(s.bidones_cargados || 0) - (s.bidones_entregados || 0)}`).join(' | ')
     : null
 
@@ -207,10 +207,10 @@ const Stock = () => {
             sub={desglose('bidones_planta')}
           />
           <Tarjeta
-            label="Bidones en furgón"
-            valor={disponiblesEnFurgon}
+            label="Bidones en ruta actualmente"
+            valor={bidonesEnRutaActualmente}
             color="border-l-orange-500"
-            sub={desgloseDisponibles}
+            sub={desgloseBidonesEnRuta}
           />
           <Tarjeta
             label="Entregados hoy"

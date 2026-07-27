@@ -1,9 +1,9 @@
 const { Server } = require('socket.io');
 
-const initSockets = (server) => {
+const initSockets = (server, corsOrigin = true) => {
   const io = new Server(server, {
     cors: {
-      origin: true,
+      origin: corsOrigin,
       methods: ['GET', 'POST'],
     },
   });

@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import api from '../../services/api'
 import socket, { conectarSocket } from '../../services/socket'
+import { construirPedidosCarga } from '../../utils/pedidoPayload'
 
 const ESTADO_BADGE = {
   pendiente:        'bg-gray-100 text-gray-700',
@@ -83,6 +84,8 @@ const Pedidos = () => {
   const [zonaRapida, setZonaRapida]             = useState('')
   const [filasCarga, setFilasCarga]             = useState([])
   const [guardandoCarga, setGuardandoCarga]     = useState(false)
+  const [errorCargaRapida, setErrorCargaRapida] = useState('')
+  const cargaRapidaEnCurso = useRef(false)
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -264,6 +267,7 @@ const Pedidos = () => {
   const abrirCargaRapida = () => {
     setZonaRapida('')
     setFilasCarga([])
+    setErrorCargaRapida('')
     setModalCargaRapida(true)
   }
 
@@ -271,49 +275,72 @@ const Pedidos = () => {
     setModalCargaRapida(false)
     setZonaRapida('')
     setFilasCarga([])
+    setErrorCargaRapida('')
   }
 
   const handleZonaRapida = (e) => {
     const zona = e.target.value
     setZonaRapida(zona)
+    setErrorCargaRapida('')
     const base = zona ? clientes.filter(c => String(c.cod_zona) === zona) : []
-    setFilasCarga(base.map(c => ({ id_cliente: c.id_cliente, nombre: c.nombre, cant10: 0, cant20: 0, urgente: false })))
+    setFilasCarga(base.map(c => ({
+      id_cliente: c.id_cliente,
+      nombre: c.nombre,
+      cantidades: Object.fromEntries(bidones.map(b => [b.cod_bidon, 0])),
+      urgente: false,
+    })))
   }
 
-  const handleFilaCarga = (idx, campo, valor) => {
-    setFilasCarga(prev => prev.map((f, i) => i === idx ? { ...f, [campo]: valor } : f))
+  const handleCantidadCarga = (idx, cod_bidon, valor) => {
+    setFilasCarga(prev => prev.map((f, i) => i === idx
+      ? { ...f, cantidades: { ...f.cantidades, [cod_bidon]: valor } }
+      : f
+    ))
+    setErrorCargaRapida('')
+  }
+
+  const togglePrioridadCarga = (idx) => {
+    setFilasCarga(prev => prev.map((f, i) => i === idx ? { ...f, urgente: !f.urgente } : f))
   }
 
   const handleCargaRapida = async () => {
-    const cod10 = bidones.find(b => b.formato === '10 litros')?.cod_bidon
-    const cod20 = bidones.find(b => b.formato === '20 litros')?.cod_bidon
+    if (cargaRapidaEnCurso.current) return
+    const aCrear = construirPedidosCarga(filasCarga, bidones)
 
-    const aCrear = filasCarga.filter(f => Number(f.cant10) > 0 || Number(f.cant20) > 0)
-    if (aCrear.length === 0) return
+    if (aCrear.length === 0) {
+      setErrorCargaRapida('Indique al menos un bidón con una cantidad entera entre 1 y 100.')
+      return
+    }
 
+    cargaRapidaEnCurso.current = true
     setGuardandoCarga(true)
-    const resultados = await Promise.allSettled(
-      aCrear.map(f => {
-        const lineas = []
-        if (cod10 && Number(f.cant10) > 0) lineas.push({ cod_bidon: cod10, cantidad: Number(f.cant10) })
-        if (cod20 && Number(f.cant20) > 0) lineas.push({ cod_bidon: cod20, cantidad: Number(f.cant20) })
-        return api.post('/pedidos', { id_cliente: f.id_cliente, prioridad: f.urgente ? 'urgente' : 'normal', lineas })
-      })
-    )
-    setGuardandoCarga(false)
+    setErrorCargaRapida('')
+    setError('')
+    try {
+      const resultados = await Promise.allSettled(
+        aCrear.map(pedido => api.post('/pedidos', pedido.payload))
+      )
 
-    const creados = resultados.filter(r => r.status === 'fulfilled').length
-    const fallidos = resultados
-      .map((r, i) => r.status === 'rejected' ? aCrear[i].nombre : null)
-      .filter(Boolean)
+      const creados = resultados.filter(r => r.status === 'fulfilled').length
+      const fallidos = resultados
+        .map((resultado, i) => resultado.status === 'rejected'
+          ? `${aCrear[i].nombre}: ${resultado.reason?.response?.data?.message || 'error al crear el pedido'}`
+          : null
+        )
+        .filter(Boolean)
 
-    cerrarCargaRapida()
-    cargarDatos()
+      await cargarDatos()
+      cerrarCargaRapida()
 
-    if (fallidos.length === 0) {
-      mostrarMensaje(`Se crearon ${creados} pedidos.`)
-    } else {
-      mostrarMensaje(`Se crearon ${creados} pedidos. Fallaron: ${fallidos.join(', ')}.`)
+      if (fallidos.length === 0) {
+        mostrarMensaje(`Se crearon correctamente ${creados} pedido(s).`)
+      } else {
+        if (creados > 0) mostrarMensaje(`Se crearon correctamente ${creados} pedido(s).`)
+        setError(`Fallaron ${fallidos.length} pedido(s): ${fallidos.join('; ')}.`)
+      }
+    } finally {
+      cargaRapidaEnCurso.current = false
+      setGuardandoCarga(false)
     }
   }
 
@@ -676,8 +703,11 @@ const Pedidos = () => {
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="text-left px-3 py-2 font-medium text-gray-600">Cliente</th>
-                        <th className="text-center px-3 py-2 font-medium text-gray-600">10L</th>
-                        <th className="text-center px-3 py-2 font-medium text-gray-600">20L</th>
+                        {bidones.map(b => (
+                          <th key={b.cod_bidon} className="text-center px-3 py-2 font-medium text-gray-600">
+                            {b.formato || b.descripcion}
+                          </th>
+                        ))}
                         <th className="text-center px-3 py-2 font-medium text-gray-600">Urgente</th>
                       </tr>
                     </thead>
@@ -690,32 +720,23 @@ const Pedidos = () => {
                           <td className={`px-3 py-2 font-medium ${f.urgente ? 'text-red-800' : 'text-gray-800'}`}>
                             {f.nombre}
                           </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step={1}
-                              value={f.cant10}
-                              onChange={e => handleFilaCarga(idx, 'cant10', e.target.value)}
-                              className="w-16 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step={1}
-                              value={f.cant20}
-                              onChange={e => handleFilaCarga(idx, 'cant20', e.target.value)}
-                              className="w-16 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
+                          {bidones.map(b => (
+                            <td key={b.cod_bidon} className="px-3 py-2">
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={f.cantidades[b.cod_bidon] ?? 0}
+                                onChange={e => handleCantidadCarga(idx, b.cod_bidon, e.target.value)}
+                                className="w-16 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </td>
+                          ))}
                           <td className="px-3 py-2 text-center">
                             <button
                               type="button"
-                              onClick={() => handleFilaCarga(idx, 'urgente', !f.urgente)}
+                              onClick={() => togglePrioridadCarga(idx)}
                               className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
                                 f.urgente
                                   ? 'bg-red-500 text-white hover:bg-red-600'
@@ -734,6 +755,9 @@ const Pedidos = () => {
             </div>
 
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
+              {errorCargaRapida && (
+                <p className="mr-auto self-center text-sm text-red-600">{errorCargaRapida}</p>
+              )}
               <button
                 type="button"
                 onClick={cerrarCargaRapida}
@@ -745,7 +769,7 @@ const Pedidos = () => {
               <button
                 type="button"
                 onClick={handleCargaRapida}
-                disabled={guardandoCarga || filasCarga.every(f => Number(f.cant10) === 0 && Number(f.cant20) === 0)}
+                disabled={guardandoCarga}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
               >
                 {guardandoCarga ? 'Creando...' : 'Crear pedidos'}

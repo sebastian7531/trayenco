@@ -14,6 +14,11 @@ const resumenBidones = (lineas) => {
   return lineas.map((l) => `${l.cantidad}x ${l.formato?.replace(' litros', 'L') || l.descripcion}`).join(', ')
 }
 
+const nombresRepartidores = (ruta) =>
+  ruta.repartidores?.length > 0
+    ? ruta.repartidores.map((r) => r.nombre).join(', ')
+    : ruta.repartidor_nombre
+
 const ESTADO_BADGE = {
   pendiente:        'bg-gray-100 text-gray-700',
   en_ruta:          'bg-blue-100 text-blue-700',
@@ -96,7 +101,7 @@ const Dashboard = () => {
 
   const totalCargados = Array.isArray(stock) ? stock.reduce((acc, s) => acc + (s.bidones_cargados || 0), 0) : 0
   const totalEntregados = Array.isArray(stock) ? stock.reduce((acc, s) => acc + (s.bidones_entregados || 0), 0) : 0
-  const bidionesFurgon = stock ? totalCargados - totalEntregados : null
+  const bidonesEnRutaActualmente = stock ? totalCargados - totalEntregados : null
 
   return (
     <div className="p-6 space-y-6">
@@ -132,8 +137,8 @@ const Dashboard = () => {
             sub={resumen ? `de ${resumen.pedidos.total} totales` : ''}
           />
           <Tarjeta
-            label="Bidones en furgón"
-            valor={bidionesFurgon}
+            label="Bidones en ruta actualmente"
+            valor={bidonesEnRutaActualmente}
             color="border-l-orange-500"
             sub={stock ? `de ${totalCargados} cargados` : ''}
           />
@@ -213,7 +218,7 @@ const Dashboard = () => {
                     <p className="text-xs text-gray-400 mt-0.5">{r.total_pedidos} pedido(s)</p>
                   </div>
                   <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">
-                    {r.repartidor_nombre || 'Sin asignar'}
+                    {nombresRepartidores(r) || 'Sin asignar'}
                   </span>
                 </div>
               ))}

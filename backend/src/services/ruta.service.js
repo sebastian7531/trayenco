@@ -3,22 +3,73 @@ const { fechaHoy } = require('../utils/fecha');
 
 const ORIGEN = { lat: -36.6108, lon: -72.9539 };
 
+const REPARTIDORES_ASIGNADOS_SQL = `
+  COALESCE(
+    (
+      SELECT JSON_AGG(
+        JSON_BUILD_OBJECT(
+          'id_repartidor', asignado.id_repartidor,
+          'nombre', asignado.nombre
+        )
+        ORDER BY asignado.nombre
+      )
+      FROM (
+        SELECT rep.id_repartidor, rep.nombre
+        FROM ruta_repartidor rr
+        JOIN repartidor rep ON rep.id_repartidor = rr.id_repartidor
+        WHERE rr.cod_ruta = r.cod_ruta
+
+        UNION ALL
+
+        SELECT legacy.id_repartidor, legacy.nombre
+        FROM repartidor legacy
+        WHERE legacy.id_repartidor = r.id_repartidor
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ruta_repartidor rr_legacy
+            WHERE rr_legacy.cod_ruta = r.cod_ruta
+          )
+      ) asignado
+    ),
+    '[]'::json
+  )
+`;
+
+const validarRepartidores = async (cliente_db, repartidor_ids) => {
+  const resultado = await cliente_db.query(
+    `SELECT id_repartidor, nombre, rol
+     FROM repartidor
+     WHERE id_repartidor = ANY($1::int[])`,
+    [repartidor_ids]
+  );
+
+  const encontrados = new Set(resultado.rows.map(r => Number(r.id_repartidor)));
+  const faltantes = repartidor_ids.filter(id => !encontrados.has(id));
+  if (faltantes.length > 0) {
+    throw new Error(`Repartidores no encontrados: ${faltantes.join(', ')}`);
+  }
+
+  const rolesInvalidos = resultado.rows.filter(r => r.rol !== 'repartidor');
+  if (rolesInvalidos.length > 0) {
+    throw new Error(`Usuarios sin rol repartidor: ${rolesInvalidos.map(r => r.nombre).join(', ')}`);
+  }
+};
+
 const getRutas = async () => {
   const result = await pool.query(`
     SELECT r.*,
            rep.nombre AS repartidor_nombre,
-           COUNT(p.id_pedido)::int AS total_pedidos,
+           ${REPARTIDORES_ASIGNADOS_SQL} AS repartidores,
+           (SELECT COUNT(*)::int FROM pedidos p WHERE p.cod_ruta = r.cod_ruta) AS total_pedidos,
            COALESCE(
-             (SELECT JSON_AGG(JSON_BUILD_OBJECT('cod_zona', z.cod_zona, 'nombre', z.nombre) ORDER BY z.nombre)
-              FROM ruta_zona rz
+              (SELECT JSON_AGG(JSON_BUILD_OBJECT('cod_zona', z.cod_zona, 'nombre', z.nombre) ORDER BY z.nombre)
+               FROM ruta_zona rz
               JOIN zona z ON z.cod_zona = rz.cod_zona
               WHERE rz.cod_ruta = r.cod_ruta),
              '[]'::json
            ) AS zonas
     FROM ruta r
     LEFT JOIN repartidor rep ON rep.id_repartidor = r.id_repartidor
-    LEFT JOIN pedidos p ON p.cod_ruta = r.cod_ruta
-    GROUP BY r.cod_ruta, rep.nombre
     ORDER BY r.fecha DESC
   `);
   return result.rows;
@@ -26,7 +77,8 @@ const getRutas = async () => {
 
 const getRutaById = async (id) => {
   const rutaResult = await pool.query(`
-    SELECT r.*, rep.nombre AS repartidor_nombre
+    SELECT r.*, rep.nombre AS repartidor_nombre,
+           ${REPARTIDORES_ASIGNADOS_SQL} AS repartidores
     FROM ruta r
     LEFT JOIN repartidor rep ON rep.id_repartidor = r.id_repartidor
     WHERE r.cod_ruta = $1
@@ -64,9 +116,26 @@ const getRutaById = async (id) => {
 
 const getRutaDeRepartidorHoy = async (id_repartidor) => {
   const result = await pool.query(
-    `SELECT cod_ruta FROM ruta
-     WHERE id_repartidor = $1 AND fecha = $2 AND estado = 'activa'
-     ORDER BY cod_ruta ASC LIMIT 1`,
+    `SELECT r.cod_ruta
+     FROM ruta r
+     WHERE r.fecha = $2
+       AND r.estado = 'activa'
+       AND (
+         EXISTS (
+           SELECT 1
+           FROM ruta_repartidor rr
+           WHERE rr.cod_ruta = r.cod_ruta
+             AND rr.id_repartidor = $1
+         )
+         OR (
+           r.id_repartidor = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM ruta_repartidor rr_legacy WHERE rr_legacy.cod_ruta = r.cod_ruta
+           )
+         )
+       )
+     ORDER BY r.cod_ruta ASC
+     LIMIT 1`,
     [id_repartidor, fechaHoy()]
   );
   if (result.rows.length === 0) return null;
@@ -81,7 +150,7 @@ const cerrarReparto = async (cod_ruta) => {
   return getRutaById(cod_ruta);
 };
 
-const createRuta = async ({ fecha, id_repartidor, cod_zonas = [], texto, cantidad_bidones }) => {
+const createRuta = async ({ fecha, repartidor_ids, cod_zonas = [], texto, cantidad_bidones }) => {
   const zonas = cod_zonas.filter(z => z != null && !isNaN(Number(z))).map(Number);
   const primeraZona = zonas.length > 0 ? zonas[0] : null;
   const fechaRuta = fecha || fechaHoy();
@@ -89,12 +158,20 @@ const createRuta = async ({ fecha, id_repartidor, cod_zonas = [], texto, cantida
   const cliente_db = await pool.connect();
   try {
     await cliente_db.query('BEGIN');
+    await validarRepartidores(cliente_db, repartidor_ids);
     const result = await cliente_db.query(
       `INSERT INTO ruta (fecha, id_repartidor, cod_zona, texto, cantidad_bidones)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [fechaRuta, id_repartidor || null, primeraZona, texto || null, cantidad_bidones || null]
+      [fechaRuta, repartidor_ids[0], primeraZona, texto || null, cantidad_bidones || null]
     );
     const ruta = result.rows[0];
+
+    for (const id_repartidor of repartidor_ids) {
+      await cliente_db.query(
+        'INSERT INTO ruta_repartidor (cod_ruta, id_repartidor) VALUES ($1, $2)',
+        [ruta.cod_ruta, id_repartidor]
+      );
+    }
 
     for (const cod_zona of zonas) {
       await cliente_db.query(
@@ -111,6 +188,65 @@ const createRuta = async ({ fecha, id_repartidor, cod_zonas = [], texto, cantida
   } finally {
     cliente_db.release();
   }
+};
+
+const actualizarRepartidores = async (cod_ruta, repartidor_ids) => {
+  const cliente_db = await pool.connect();
+  try {
+    await cliente_db.query('BEGIN');
+    const ruta = await cliente_db.query(
+      'SELECT cod_ruta FROM ruta WHERE cod_ruta = $1 FOR UPDATE',
+      [cod_ruta]
+    );
+    if (ruta.rows.length === 0) throw new Error('Ruta no encontrada');
+
+    await validarRepartidores(cliente_db, repartidor_ids);
+    await cliente_db.query('DELETE FROM ruta_repartidor WHERE cod_ruta = $1', [cod_ruta]);
+    for (const id_repartidor of repartidor_ids) {
+      await cliente_db.query(
+        'INSERT INTO ruta_repartidor (cod_ruta, id_repartidor) VALUES ($1, $2)',
+        [cod_ruta, id_repartidor]
+      );
+    }
+    await cliente_db.query(
+      'UPDATE ruta SET id_repartidor = $1 WHERE cod_ruta = $2',
+      [repartidor_ids[0], cod_ruta]
+    );
+
+    await cliente_db.query('COMMIT');
+    return getRutaById(cod_ruta);
+  } catch (err) {
+    await cliente_db.query('ROLLBACK');
+    throw err;
+  } finally {
+    cliente_db.release();
+  }
+};
+
+const esRepartidorAsignado = async (cod_ruta, id_repartidor) => {
+  const resultado = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM ruta r
+       WHERE r.cod_ruta = $1
+         AND (
+           EXISTS (
+             SELECT 1
+             FROM ruta_repartidor rr
+             WHERE rr.cod_ruta = r.cod_ruta
+               AND rr.id_repartidor = $2
+           )
+           OR (
+             r.id_repartidor = $2
+             AND NOT EXISTS (
+               SELECT 1 FROM ruta_repartidor rr_legacy WHERE rr_legacy.cod_ruta = r.cod_ruta
+             )
+           )
+         )
+     ) AS asignado`,
+    [cod_ruta, id_repartidor]
+  );
+  return resultado.rows[0].asignado;
 };
 
 const asignarPedidos = async (cod_ruta, pedido_ids) => {
@@ -288,4 +424,15 @@ const actualizarOrden = async (cod_ruta, pedidos) => {
   return getRutaById(cod_ruta);
 };
 
-module.exports = { getRutas, getRutaById, getRutaDeRepartidorHoy, createRuta, asignarPedidos, generarOrdenOptimo, actualizarOrden, cerrarReparto };
+module.exports = {
+  getRutas,
+  getRutaById,
+  getRutaDeRepartidorHoy,
+  createRuta,
+  actualizarRepartidores,
+  esRepartidorAsignado,
+  asignarPedidos,
+  generarOrdenOptimo,
+  actualizarOrden,
+  cerrarReparto,
+};

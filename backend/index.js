@@ -25,15 +25,23 @@ const registroRoutes   = require('./src/routes/registro.routes');
 
 const app = express();
 const server = http.createServer(app);
-const io = initSockets(server);
 const PORT = process.env.PORT || 3000;
+const origenesConfigurados = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map(origen => origen.trim())
+  .filter(Boolean);
+const corsOrigin = origenesConfigurados.length > 0 ? origenesConfigurados : true;
+const io = initSockets(server, corsOrigin);
 
 require('./src/config/db');
 
+// La aplicación recibe tráfico desde un único proxy inverso Nginx.
+// Esto permite que express-rate-limit use la IP original de X-Forwarded-For.
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
-  origin: true,
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
