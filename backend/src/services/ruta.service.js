@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const { fechaHoy } = require('../utils/fecha');
 
 const ORIGEN = { lat: -36.6108, lon: -72.9539 };
+const TIME_ZONE = 'America/Santiago';
 
 const REPARTIDORES_ASIGNADOS_SQL = `
   COALESCE(
@@ -55,6 +56,23 @@ const validarRepartidores = async (cliente_db, repartidor_ids) => {
   }
 };
 
+const registrarEstadoRuta = async (cliente_db, cod_ruta, descripcion) => {
+  const resultado = await cliente_db.query(
+    `INSERT INTO tiene_ruta (cod_ruta, cod_estado, fecha, hora)
+     SELECT $1, er.cod_estado, CURRENT_DATE, LOCALTIME(0)
+     FROM estado_ruta er
+     WHERE er.descripcion = $2
+     RETURNING cod_ruta, cod_estado, fecha, hora`,
+    [cod_ruta, descripcion]
+  );
+
+  if (resultado.rows.length !== 1) {
+    throw new Error(`Estado de ruta no configurado: ${descripcion}`);
+  }
+
+  return resultado.rows[0];
+};
+
 const getRutas = async () => {
   const result = await pool.query(`
     SELECT r.*,
@@ -72,6 +90,41 @@ const getRutas = async () => {
     LEFT JOIN repartidor rep ON rep.id_repartidor = r.id_repartidor
     ORDER BY r.fecha DESC
   `);
+  return result.rows;
+};
+
+const getHistorialRutas = async () => {
+  const result = await pool.query(`
+    SELECT
+      r.cod_ruta,
+      r.fecha::text AS fecha,
+      TO_CHAR(inicio.hora, 'HH24:MI:SS') AS hora_inicio,
+      TO_CHAR(termino.hora, 'HH24:MI:SS') AS hora_termino,
+      CASE
+        WHEN inicio.fecha IS NULL OR termino.fecha IS NULL THEN NULL
+        ELSE EXTRACT(
+          EPOCH FROM (
+            ((termino.fecha + termino.hora) AT TIME ZONE '${TIME_ZONE}')
+            - ((inicio.fecha + inicio.hora) AT TIME ZONE '${TIME_ZONE}')
+          )
+        )::int
+      END AS duracion_segundos,
+      r.estado,
+      ${REPARTIDORES_ASIGNADOS_SQL} AS repartidores
+    FROM ruta r
+    LEFT JOIN estado_ruta estado_inicio
+      ON estado_inicio.descripcion = 'activa'
+    LEFT JOIN tiene_ruta inicio
+      ON inicio.cod_ruta = r.cod_ruta
+     AND inicio.cod_estado = estado_inicio.cod_estado
+    LEFT JOIN estado_ruta estado_termino
+      ON estado_termino.descripcion = 'cerrada'
+    LEFT JOIN tiene_ruta termino
+      ON termino.cod_ruta = r.cod_ruta
+     AND termino.cod_estado = estado_termino.cod_estado
+    ORDER BY r.fecha DESC, r.cod_ruta DESC
+  `);
+
   return result.rows;
 };
 
@@ -146,6 +199,7 @@ const cerrarReparto = async (cod_ruta) => {
   const cliente_db = await pool.connect();
   try {
     await cliente_db.query('BEGIN');
+    await cliente_db.query(`SET LOCAL TIME ZONE '${TIME_ZONE}'`);
     const ruta = await cliente_db.query(
       'SELECT cod_ruta, estado FROM ruta WHERE cod_ruta = $1 FOR UPDATE',
       [cod_ruta]
@@ -167,6 +221,7 @@ const cerrarReparto = async (cod_ruta) => {
     }
 
     await cliente_db.query("UPDATE ruta SET estado = 'cerrada' WHERE cod_ruta = $1", [cod_ruta]);
+    await registrarEstadoRuta(cliente_db, cod_ruta, 'cerrada');
     await cliente_db.query('COMMIT');
   } catch (err) {
     await cliente_db.query('ROLLBACK');
@@ -185,6 +240,7 @@ const createRuta = async ({ fecha, repartidor_ids, cod_zonas = [], texto, cantid
   const cliente_db = await pool.connect();
   try {
     await cliente_db.query('BEGIN');
+    await cliente_db.query(`SET LOCAL TIME ZONE '${TIME_ZONE}'`);
     await validarRepartidores(cliente_db, repartidor_ids);
     const result = await cliente_db.query(
       `INSERT INTO ruta (fecha, id_repartidor, cod_zona, texto, cantidad_bidones)
@@ -192,6 +248,7 @@ const createRuta = async ({ fecha, repartidor_ids, cod_zonas = [], texto, cantid
       [fechaRuta, repartidor_ids[0], primeraZona, texto || null, cantidad_bidones || null]
     );
     const ruta = result.rows[0];
+    await registrarEstadoRuta(cliente_db, ruta.cod_ruta, 'activa');
 
     for (const id_repartidor of repartidor_ids) {
       await cliente_db.query(
@@ -222,10 +279,13 @@ const actualizarRepartidores = async (cod_ruta, repartidor_ids) => {
   try {
     await cliente_db.query('BEGIN');
     const ruta = await cliente_db.query(
-      'SELECT cod_ruta FROM ruta WHERE cod_ruta = $1 FOR UPDATE',
+      'SELECT cod_ruta, estado FROM ruta WHERE cod_ruta = $1 FOR UPDATE',
       [cod_ruta]
     );
     if (ruta.rows.length === 0) throw new Error('Ruta no encontrada');
+    if (ruta.rows[0].estado === 'cerrada') {
+      throw new Error('No se pueden modificar los repartidores de una ruta cerrada');
+    }
 
     await validarRepartidores(cliente_db, repartidor_ids);
     await cliente_db.query('DELETE FROM ruta_repartidor WHERE cod_ruta = $1', [cod_ruta]);
@@ -453,6 +513,7 @@ const actualizarOrden = async (cod_ruta, pedidos) => {
 
 module.exports = {
   getRutas,
+  getHistorialRutas,
   getRutaById,
   getRutaDeRepartidorHoy,
   createRuta,

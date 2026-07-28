@@ -24,6 +24,12 @@ CREATE TABLE estado_pedido (
   descripcion  VARCHAR(50) NOT NULL
 );
 
+CREATE TABLE estado_ruta (
+  cod_estado   INTEGER PRIMARY KEY,
+  descripcion  VARCHAR(20) UNIQUE NOT NULL
+               CHECK (descripcion IN ('activa', 'cerrada'))
+);
+
 CREATE TABLE bidones (
   cod_bidon    SERIAL PRIMARY KEY,
   descripcion  VARCHAR(100),
@@ -61,6 +67,14 @@ CREATE TABLE ruta_repartidor (
 
 CREATE INDEX idx_ruta_repartidor_repartidor
   ON ruta_repartidor(id_repartidor, cod_ruta);
+
+CREATE TABLE tiene_ruta (
+  cod_ruta    INTEGER NOT NULL REFERENCES ruta(cod_ruta),
+  cod_estado  INTEGER NOT NULL REFERENCES estado_ruta(cod_estado),
+  fecha       DATE NOT NULL,
+  hora        TIME NOT NULL,
+  PRIMARY KEY (cod_ruta, cod_estado)
+);
 
 CREATE TABLE asistencia (
   id_asistencia  SERIAL PRIMARY KEY,
@@ -125,6 +139,10 @@ INSERT INTO estado_pedido (descripcion) VALUES
   ('entregado'),
   ('parcial'),
   ('fallido');
+
+INSERT INTO estado_ruta (cod_estado, descripcion) VALUES
+  (1, 'activa'),
+  (2, 'cerrada');
 
 INSERT INTO bidones (descripcion, formato, precio) VALUES
   ('Bidon de agua purificada 10L', '10 litros', 2000.00),

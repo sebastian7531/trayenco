@@ -43,6 +43,14 @@ const getRutas = async (req, res) => {
   }
 };
 
+const getHistorialRutas = async (req, res) => {
+  try {
+    return success(res, await service.getHistorialRutas());
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 const getRutaById = async (req, res) => {
   try {
     const data = await service.getRutaById(req.params.id);
@@ -95,7 +103,10 @@ const actualizarRepartidores = async (req, res) => {
     io.to('administradores').emit('ruta_actualizada', data);
     return success(res, data, 'Repartidores actualizados');
   } catch (err) {
-    return error(res, err.message, estadoErrorRepartidores(err));
+    const status = err.message.includes('ruta cerrada')
+      ? 400
+      : estadoErrorRepartidores(err);
+    return error(res, err.message, status);
   }
 };
 
@@ -170,6 +181,7 @@ const actualizarOrden = async (req, res) => {
 
 module.exports = {
   getRutas,
+  getHistorialRutas,
   getRutaById,
   miRutaHoy,
   createRuta,

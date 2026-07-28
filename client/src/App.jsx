@@ -11,6 +11,7 @@ import AdminDashboard from './pages/admin/Dashboard'
 import Clientes from './pages/admin/Clientes'
 import Pedidos from './pages/admin/Pedidos'
 import Rutas from './pages/admin/Rutas'
+import HistorialRutas from './pages/admin/HistorialRutas'
 import Stock from './pages/admin/Stock'
 import Asistencia from './pages/admin/Asistencia'
 import Reportes from './pages/admin/Reportes'
@@ -35,6 +36,7 @@ function App() {
                 <Route path="zonas" element={<Zonas />} />
                 <Route path="pedidos" element={<Pedidos />} />
                 <Route path="rutas" element={<Rutas />} />
+                <Route path="historial-rutas" element={<HistorialRutas />} />
                 <Route path="stock" element={<Stock />} />
                 <Route path="asistencia" element={<Asistencia />} />
                 <Route path="usuarios" element={<Usuarios />} />

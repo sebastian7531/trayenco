@@ -9,6 +9,7 @@ const NAV = [
   { to: '/admin/zonas',      label: 'Zonas' },
   { to: '/admin/pedidos',    label: 'Pedidos' },
   { to: '/admin/rutas',      label: 'Rutas' },
+  { to: '/admin/historial-rutas', label: 'Historial de rutas' },
   { to: '/admin/stock',      label: 'Stock' },
   { to: '/admin/asistencia', label: 'Asistencia' },
   { to: '/admin/usuarios',   label: 'Usuarios' },

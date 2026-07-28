@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { verifyToken, requireAdmin } = require('../middleware/auth.middleware');
 const {
   getRutas,
+  getHistorialRutas,
   getRutaById,
   miRutaHoy,
   createRuta,
@@ -18,6 +19,7 @@ router.use(verifyToken);
 
 router.get('/', getRutas);
 router.get('/mi-ruta-hoy', miRutaHoy);
+router.get('/historial', requireAdmin, getHistorialRutas);
 router.get('/:id', getRutaById);
 router.post('/', requireAdmin, createRuta);
 router.patch('/:id/repartidores', requireAdmin, actualizarRepartidores);
