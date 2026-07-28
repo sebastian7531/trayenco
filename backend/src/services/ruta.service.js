@@ -143,10 +143,37 @@ const getRutaDeRepartidorHoy = async (id_repartidor) => {
 };
 
 const cerrarReparto = async (cod_ruta) => {
-  const ruta = await pool.query('SELECT cod_ruta, estado FROM ruta WHERE cod_ruta = $1', [cod_ruta]);
-  if (ruta.rows.length === 0) throw new Error('Ruta no encontrada');
-  if (ruta.rows[0].estado === 'cerrada') throw new Error('La ruta ya está cerrada');
-  await pool.query("UPDATE ruta SET estado = 'cerrada' WHERE cod_ruta = $1", [cod_ruta]);
+  const cliente_db = await pool.connect();
+  try {
+    await cliente_db.query('BEGIN');
+    const ruta = await cliente_db.query(
+      'SELECT cod_ruta, estado FROM ruta WHERE cod_ruta = $1 FOR UPDATE',
+      [cod_ruta]
+    );
+    if (ruta.rows.length === 0) throw new Error('Ruta no encontrada');
+    if (ruta.rows[0].estado === 'cerrada') throw new Error('La ruta ya está cerrada');
+
+    const pendientes = await cliente_db.query(
+      `SELECT COUNT(DISTINCT p.id_pedido)::int AS total
+       FROM pedidos p
+       LEFT JOIN pedido_estado pe ON pe.id_pedido = p.id_pedido
+       LEFT JOIN estado_pedido ep ON ep.cod = pe.cod_estado
+       WHERE p.cod_ruta = $1
+         AND (ep.descripcion IS NULL OR ep.descripcion NOT IN ('entregado', 'problema_entrega'))`,
+      [cod_ruta]
+    );
+    if (pendientes.rows[0].total > 0) {
+      throw new Error('La ruta tiene pedidos pendientes y no puede cerrarse');
+    }
+
+    await cliente_db.query("UPDATE ruta SET estado = 'cerrada' WHERE cod_ruta = $1", [cod_ruta]);
+    await cliente_db.query('COMMIT');
+  } catch (err) {
+    await cliente_db.query('ROLLBACK');
+    throw err;
+  } finally {
+    cliente_db.release();
+  }
   return getRutaById(cod_ruta);
 };
 

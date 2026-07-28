@@ -6,6 +6,7 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import api from '../../services/api'
 import socket, { conectarSocket } from '../../services/socket'
+import { fechaHoySantiago } from '../../utils/stock'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconUrl: markerIcon, shadowUrl: markerShadow })
@@ -46,7 +47,7 @@ const plantaIcon = L.divIcon({
 const fmt = (fechaStr) =>
   new Date(fechaStr).toLocaleDateString('es-CL', { timeZone: 'UTC' })
 
-const hoyISO = () => new Date().toISOString().split('T')[0]
+const hoyISO = fechaHoySantiago
 
 const hoyLegible = () =>
   new Date().toLocaleDateString('es-CL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })

@@ -37,6 +37,15 @@ const getStockHoy = async (cod_bidon, client) => {
   return result.rows;
 };
 
+const bloquearStockHoy = async (cod_bidon, client) => {
+  const stock = await getStockHoy(cod_bidon, client);
+  const bloqueado = await client.query(
+    'SELECT * FROM stock WHERE id_stock = $1 FOR UPDATE',
+    [stock.id_stock]
+  );
+  return bloqueado.rows[0];
+};
+
 const actualizarPlanta = async (bidones_planta, cod_bidon) => {
   const stock = await getStockHoy(cod_bidon);
   const result = await pool.query(
@@ -64,29 +73,60 @@ const cargarFurgon = async (cantidad, cod_bidon) => {
 };
 
 const confirmarEntrega = async (cantidad, cod_bidon, client) => {
-  const db = client || pool;
-  const stock = await getStockHoy(cod_bidon, db);
+  const ejecutar = async (db) => {
+    const stock = await bloquearStockHoy(cod_bidon, db);
+    const disponiblesEnFurgon =
+      stock.bidones_cargados - stock.bidones_entregados - stock.bidones_retornados;
+    if (cantidad > disponiblesEnFurgon) {
+      throw new Error(`Bidones insuficientes en el furgón. Disponibles: ${disponiblesEnFurgon}`);
+    }
 
-  const disponiblesEnFurgon = stock.bidones_cargados - stock.bidones_entregados;
-  if (cantidad > disponiblesEnFurgon) {
-    throw new Error(`Bidones insuficientes en el furgón. Disponibles: ${disponiblesEnFurgon}`);
+    const result = await db.query(
+      'UPDATE stock SET bidones_entregados = bidones_entregados + $1 WHERE id_stock = $2 RETURNING *',
+      [cantidad, stock.id_stock]
+    );
+    return result.rows[0];
+  };
+
+  if (client) return ejecutar(client);
+
+  const cliente_db = await pool.connect();
+  try {
+    await cliente_db.query('BEGIN');
+    const stock = await ejecutar(cliente_db);
+    await cliente_db.query('COMMIT');
+    return stock;
+  } catch (err) {
+    await cliente_db.query('ROLLBACK');
+    throw err;
+  } finally {
+    cliente_db.release();
   }
-
-  const result = await db.query(
-    'UPDATE stock SET bidones_entregados = bidones_entregados + $1 WHERE id_stock = $2 RETURNING *',
-    [cantidad, stock.id_stock]
-  );
-  return result.rows[0];
 };
 
 const registrarRetorno = async (cantidad, cod_bidon) => {
-  const stock = await getStockHoy(cod_bidon);
+  const cliente_db = await pool.connect();
+  try {
+    await cliente_db.query('BEGIN');
+    const stock = await bloquearStockHoy(cod_bidon, cliente_db);
+    const disponiblesEnRuta =
+      stock.bidones_cargados - stock.bidones_entregados - stock.bidones_retornados;
+    if (cantidad > disponiblesEnRuta) {
+      throw new Error(`El retorno supera los bidones disponibles en ruta. Disponibles: ${disponiblesEnRuta}`);
+    }
 
-  const result = await pool.query(
-    'UPDATE stock SET bidones_retornados = bidones_retornados + $1 WHERE id_stock = $2 RETURNING *',
-    [cantidad, stock.id_stock]
-  );
-  return result.rows[0];
+    const result = await cliente_db.query(
+      'UPDATE stock SET bidones_retornados = bidones_retornados + $1 WHERE id_stock = $2 RETURNING *',
+      [cantidad, stock.id_stock]
+    );
+    await cliente_db.query('COMMIT');
+    return result.rows[0];
+  } catch (err) {
+    await cliente_db.query('ROLLBACK');
+    throw err;
+  } finally {
+    cliente_db.release();
+  }
 };
 
 module.exports = { getStock, getStockHoy, actualizarPlanta, cargarFurgon, confirmarEntrega, registrarRetorno };

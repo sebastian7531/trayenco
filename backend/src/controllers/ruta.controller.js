@@ -149,7 +149,7 @@ const cerrarReparto = async (req, res) => {
     return success(res, data, 'Reparto cerrado');
   } catch (err) {
     const status = err.message.includes('no encontrada') ? 404
-      : err.message.includes('ya está cerrada') ? 400 : 500;
+      : err.message.includes('ya está cerrada') || err.message.includes('pedidos pendientes') ? 400 : 500;
     return error(res, err.message, status);
   }
 };

@@ -8,6 +8,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import autoTable from 'jspdf-autotable'
 import api from '../../services/api'
 import { crearDocumentoPDF, agregarPiePDF } from '../../utils/pdfHelper'
+import { fechaHoySantiago } from '../../utils/stock'
 
 const CENTRO_TOME = [-36.6108, -72.9539]
 
@@ -321,7 +322,7 @@ const Clientes = () => {
 
   const generarPDFProblemas = () => {
     if (!problemas.length) return
-    const hoyISO = new Date().toISOString().split('T')[0]
+    const hoyISO = fechaHoySantiago()
     const fechaLegible = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
     const { doc, y } = crearDocumentoPDF(
       'Reporte de clientes con problemas de entrega',

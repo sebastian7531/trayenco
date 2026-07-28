@@ -1,11 +1,10 @@
 const { Router } = require('express');
-const { verifyToken } = require('../middleware/auth.middleware');
+const { verifyToken, requireAdmin } = require('../middleware/auth.middleware');
 const {
   getStock,
   getStockHoy,
   actualizarPlanta,
   cargarFurgon,
-  confirmarEntrega,
   registrarRetorno,
 } = require('../controllers/stock.controller');
 
@@ -15,9 +14,8 @@ router.use(verifyToken);
 
 router.get('/', getStock);
 router.get('/hoy', getStockHoy);
-router.post('/planta', actualizarPlanta);
-router.post('/cargar', cargarFurgon);
-router.post('/entrega', confirmarEntrega);
-router.post('/retorno', registrarRetorno);
+router.post('/planta', requireAdmin, actualizarPlanta);
+router.post('/cargar', requireAdmin, cargarFurgon);
+router.post('/retorno', requireAdmin, registrarRetorno);
 
 module.exports = router;

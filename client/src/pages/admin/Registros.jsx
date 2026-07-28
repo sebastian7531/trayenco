@@ -4,8 +4,9 @@ import autoTable from 'jspdf-autotable'
 import api from '../../services/api'
 import socket, { conectarSocket } from '../../services/socket'
 import logo from '../../assets/logo_trayenco.jpg'
+import { fechaHoySantiago } from '../../utils/stock'
 
-const hoyISO = () => new Date().toISOString().split('T')[0]
+const hoyISO = fechaHoySantiago
 
 const RESULTADO_BADGE = {
   entregado:        'bg-green-100 text-green-700',
@@ -75,7 +76,7 @@ const Registros = () => {
     const verde     = [22, 163, 74]
     const rojo      = [220, 38, 38]
 
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = fechaHoySantiago()
     const partes = fecha.split('-')
     const fechaObj = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]))
     const fechaLegible = fechaObj.toLocaleDateString('es-CL', {

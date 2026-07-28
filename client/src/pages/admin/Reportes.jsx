@@ -9,13 +9,10 @@ import {
 } from 'recharts'
 import api from '../../services/api'
 import logo from '../../assets/logo_trayenco.jpg'
+import { desplazarFechaISO, fechaHoySantiago } from '../../utils/stock'
 
-const hoyISO = () => new Date().toISOString().split('T')[0]
-const haceNDias = (n) => {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString().split('T')[0]
-}
+const hoyISO = fechaHoySantiago
+const haceNDias = (n) => desplazarFechaISO(fechaHoySantiago(), -n)
 const fmtFecha = (f) => new Date(f).toLocaleDateString('es-CL', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })
 
 const TABS = [

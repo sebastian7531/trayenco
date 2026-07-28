@@ -52,19 +52,6 @@ const cargarFurgon = async (req, res) => {
   }
 };
 
-const confirmarEntrega = async (req, res) => {
-  try {
-    const { cantidad, cod_bidon } = req.body;
-    const mensajeError = validarCantidadEntera(cantidad, 'La cantidad');
-    if (mensajeError) return error(res, mensajeError, 400);
-    if (!cod_bidon) return error(res, 'cod_bidon es requerido', 400);
-    return success(res, await service.confirmarEntrega(Number(cantidad), Number(cod_bidon)), 'Entrega confirmada');
-  } catch (err) {
-    const status = err.message.includes('insuficientes') ? 400 : 500;
-    return error(res, err.message, status);
-  }
-};
-
 const registrarRetorno = async (req, res) => {
   try {
     const { cantidad, cod_bidon } = req.body;
@@ -73,8 +60,9 @@ const registrarRetorno = async (req, res) => {
     if (!cod_bidon) return error(res, 'cod_bidon es requerido', 400);
     return success(res, await service.registrarRetorno(Number(cantidad), Number(cod_bidon)), 'Retorno registrado');
   } catch (err) {
-    return error(res, err.message);
+    const status = err.message.includes('supera los bidones disponibles') ? 400 : 500;
+    return error(res, err.message, status);
   }
 };
 
-module.exports = { getStock, getStockHoy, actualizarPlanta, cargarFurgon, confirmarEntrega, registrarRetorno };
+module.exports = { getStock, getStockHoy, actualizarPlanta, cargarFurgon, registrarRetorno };

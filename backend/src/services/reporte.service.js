@@ -24,17 +24,17 @@ const resumenDiario = async (fecha) => {
          COALESCE(SUM(s.bidones_planta), 0)::int      AS bidones_planta,
          COALESCE(SUM(s.bidones_entregados), 0)::int  AS bidones_entregados,
          COALESCE(SUM(s.bidones_retornados), 0)::int  AS bidones_retornados,
-         COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         COALESCE(SUM(s.bidones_planta) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
            AS bidones_planta_10l,
-         COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         COALESCE(SUM(s.bidones_planta) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
            AS bidones_planta_20l,
-         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
            AS bidones_entregados_10l,
-         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         COALESCE(SUM(s.bidones_entregados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
            AS bidones_entregados_20l,
-         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
            AS bidones_retornados_10l,
-         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+         COALESCE(SUM(s.bidones_retornados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
            AS bidones_retornados_20l
        FROM stock s
        LEFT JOIN bidones b ON b.cod_bidon = s.cod_bidon
@@ -117,21 +117,21 @@ const stockHistorico = async (fecha_inicio, fecha_fin) => {
        SUM(s.bidones_cargados)::int    AS bidones_cargados,
        SUM(s.bidones_entregados)::int  AS bidones_entregados,
        SUM(s.bidones_retornados)::int  AS bidones_retornados,
-       COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '10 litros'), 0)::int
+       COALESCE(SUM(s.bidones_planta) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
          AS bidones_planta_10l,
-       COALESCE(SUM(s.bidones_planta) FILTER (WHERE b.formato = '20 litros'), 0)::int
+       COALESCE(SUM(s.bidones_planta) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
          AS bidones_planta_20l,
-       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
          AS bidones_cargados_10l,
-       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+       COALESCE(SUM(s.bidones_cargados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
          AS bidones_cargados_20l,
-       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
          AS bidones_entregados_10l,
-       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+       COALESCE(SUM(s.bidones_entregados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
          AS bidones_entregados_20l,
-       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '10 litros'), 0)::int
+       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('10 l', '10 litros')), 0)::int
          AS bidones_retornados_10l,
-       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE b.formato = '20 litros'), 0)::int
+       COALESCE(SUM(s.bidones_retornados) FILTER (WHERE LOWER(TRIM(b.formato)) IN ('20 l', '20 litros')), 0)::int
          AS bidones_retornados_20l
      FROM stock s
      LEFT JOIN bidones b ON b.cod_bidon = s.cod_bidon

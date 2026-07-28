@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import autoTable from 'jspdf-autotable'
 import api from '../../services/api'
 import { crearDocumentoPDF, agregarPiePDF } from '../../utils/pdfHelper'
+import { fechaHoySantiago } from '../../utils/stock'
 
 const FORM_VACIO    = { nombre: '', descripcion: '' }
 const ERRORES_VACIO = { nombre: '' }
@@ -136,7 +137,7 @@ const Zonas = () => {
 
   const generarPDFZonas = () => {
     if (!recurrentes.length) return
-    const hoyISO = new Date().toISOString().split('T')[0]
+    const hoyISO = fechaHoySantiago()
     const fechaLegible = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
     const { doc, y } = crearDocumentoPDF(
       'Reporte de zonas más recurrentes',

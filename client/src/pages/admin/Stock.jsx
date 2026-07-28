@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../services/api'
 import socket, { conectarSocket } from '../../services/socket'
+import { calcularSaldosStock } from '../../utils/stock'
 
 const ACCIONES = [
   {
@@ -18,14 +19,6 @@ const ACCIONES = [
     endpoint: '/stock/cargar',
     campo: 'cantidad',
     color: 'border-orange-300 text-orange-700 hover:bg-orange-50',
-  },
-  {
-    key: 'entrega',
-    label: 'Confirmar Entrega',
-    descripcion: 'Bidones entregados al cliente.',
-    endpoint: '/stock/entrega',
-    campo: 'cantidad',
-    color: 'border-green-300 text-green-700 hover:bg-green-50',
   },
   {
     key: 'retorno',
@@ -160,15 +153,15 @@ const Stock = () => {
     bidones_retornados: acc.bidones_retornados + (s.bidones_retornados || 0),
   }), { bidones_planta: 0, bidones_cargados: 0, bidones_entregados: 0, bidones_retornados: 0 })
 
-  const bidonesEnRutaActualmente = totalHoy.bidones_cargados - totalHoy.bidones_entregados
+  const saldosHoy = calcularSaldosStock(totalHoy)
 
   const desglose = (campo) =>
     stockHoy.length
       ? stockHoy.map(s => `${fmtLabel(s.formato)}: ${s[campo] ?? 0}`).join(' | ')
       : null
 
-  const desgloseBidonesEnRuta = stockHoy.length
-    ? stockHoy.map(s => `${fmtLabel(s.formato)}: ${(s.bidones_cargados || 0) - (s.bidones_entregados || 0)}`).join(' | ')
+  const desgloseSaldo = (campo) => stockHoy.length
+    ? stockHoy.map(s => `${fmtLabel(s.formato)}: ${calcularSaldosStock(s)[campo]}`).join(' | ')
     : null
 
   const idsHoy = new Set(stockHoy.map(s => s.id_stock))
@@ -202,15 +195,15 @@ const Stock = () => {
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           <Tarjeta
             label="Bidones en planta"
-            valor={totalHoy.bidones_planta}
+            valor={saldosHoy.plantaDisponible}
             color="border-l-blue-500"
-            sub={desglose('bidones_planta')}
+            sub={desgloseSaldo('plantaDisponible')}
           />
           <Tarjeta
             label="Bidones en ruta actualmente"
-            valor={bidonesEnRutaActualmente}
+            valor={saldosHoy.enRuta}
             color="border-l-orange-500"
-            sub={desgloseBidonesEnRuta}
+            sub={desgloseSaldo('enRuta')}
           />
           <Tarjeta
             label="Entregados hoy"

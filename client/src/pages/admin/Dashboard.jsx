@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../services/api'
 import socket, { conectarSocket } from '../../services/socket'
+import { calcularSaldosStock, fechaHoySantiago } from '../../utils/stock'
 
-const hoyISO = () => new Date().toISOString().split('T')[0]
+const hoyISO = fechaHoySantiago
 
 const fmtFecha = (f) => f
   ? new Date(f).toLocaleDateString('es-CL', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })
@@ -70,6 +71,7 @@ const Dashboard = () => {
       )
       setRutasHoy(rutasDeHoy)
     } catch {
+      // El intervalo volverá a intentar cargar el resumen sin bloquear el dashboard.
     } finally {
       setLoading(false)
     }
@@ -101,7 +103,14 @@ const Dashboard = () => {
 
   const totalCargados = Array.isArray(stock) ? stock.reduce((acc, s) => acc + (s.bidones_cargados || 0), 0) : 0
   const totalEntregados = Array.isArray(stock) ? stock.reduce((acc, s) => acc + (s.bidones_entregados || 0), 0) : 0
-  const bidonesEnRutaActualmente = stock ? totalCargados - totalEntregados : null
+  const totalRetornados = Array.isArray(stock) ? stock.reduce((acc, s) => acc + (s.bidones_retornados || 0), 0) : 0
+  const bidonesEnRutaActualmente = stock
+    ? calcularSaldosStock({
+        bidones_cargados: totalCargados,
+        bidones_entregados: totalEntregados,
+        bidones_retornados: totalRetornados,
+      }).enRuta
+    : null
 
   return (
     <div className="p-6 space-y-6">
